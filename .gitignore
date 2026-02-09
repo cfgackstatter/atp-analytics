@@ -1,56 +1,43 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-.eggs/
-*.egg
-
-# Virtual environments
+*.so
+.Python
 venv/
-.venv/
 env/
 ENV/
 
-# Data cache and large files
-data/raw/
+# Data files (large parquet files)
+data/
 *.parquet
-*.h5
-*.zip
-*.csv
 
-# IDE/project files
-.idea/
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# OS-specific files
+# OS
 .DS_Store
 Thumbs.db
 
-# Environment/config files
-.env
-.env.local
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
 
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints
+# Logs
+*.log
 
-# Node.js (if using npm for frontend)
-node_modules/
-npm-debug.log
+# Playwright
+.playwright/
 
-# Ignore Windows Zone.Identifier files
-*Zone.Identifier
-**/*Zone.Identifier
+# Coverage
+.coverage
+htmlcov/
 
-# Test Notebook
-Test.ipynb
-# Elastic Beanstalk Files
-.elasticbeanstalk/*
-!.elasticbeanstalk/*.cfg.yml
-!.elasticbeanstalk/*.global.yml
+# Distribution
+build/
+dist/
+*.egg-info/
