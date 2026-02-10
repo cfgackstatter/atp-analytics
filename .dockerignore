@@ -1,0 +1,23 @@
+# .dockerignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv
+data/
+*.parquet
+.git/
+.vscode/
+.idea/
+.DS_Store
+frontend/node_modules/
+frontend/dist/
+.env
+.admin-password.txt
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
