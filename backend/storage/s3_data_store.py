@@ -142,153 +142,100 @@ def load_tournaments(schema: dict | None = None) -> pl.DataFrame:
 
 
 def get_data_summary() -> dict:
-    """Get comprehensive summary statistics for all data files."""
-    from datetime import datetime
-    from typing import Any, Dict, Optional
-
-    summary: Dict[str, Any] = {
+    """Get summary statistics for all data files."""
+    summary = {
+        "bucket": BUCKET_NAME if USE_S3 else "local",
         "storage": "s3" if USE_S3 else "local",
-        "timestamp": datetime.now().isoformat()
+        "use_s3": USE_S3,
     }
 
-    # Helper function to format file size
-    def format_file_size(filename: str) -> str:
-        """Get file size in human-readable format."""
-        if USE_S3:
-            # Check if s3_client is available
-            if s3_client is None:
-                return "N/A"
-
-            try:
-                s3_key = _get_s3_key(filename)
-                response = s3_client.head_object(Bucket=BUCKET_NAME, Key=s3_key)
-                size_bytes = response['ContentLength']
-            except Exception:
-                return "N/A"
-        else:
-            path = LOCAL_DATA_DIR / filename
-            if not path.exists():
-                return "N/A"
-            size_bytes = path.stat().st_size
-
-        # Convert to human-readable format
-        size_float = float(size_bytes)
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size_float < 1024.0:
-                return f"{size_float:.1f} {unit}"
-            size_float /= 1024.0
-        return f"{size_float:.1f} TB"
-
-    # === PLAYERS ===
+    # Singles Rankings
     try:
-        players_df = load_players()
+        df = load_data("singles_rankings.parquet")
+        min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
+        max_date = df.select(pl.col("date").max()).item() if "date" in df.columns else None
+        summary["rankings_singles"] = {
+            "count": len(df),
+            "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
+            "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
+            "latest_date": max_date,
+            "size": f"{df.estimated_size('mb'):.2f} MB"
+        }
+    except FileNotFoundError:
+        summary["rankings_singles"] = None
 
-        # Count players with bio data (those with birthdate)
-        has_bio = players_df.filter(pl.col("birthdate").is_not_null())
-        missing_bio = len(players_df) - len(has_bio)
+    # Doubles Rankings
+    try:
+        df = load_data("doubles_rankings.parquet")
+        min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
+        max_date = df.select(pl.col("date").max()).item() if "date" in df.columns else None
+        summary["rankings_doubles"] = {
+            "count": len(df),
+            "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
+            "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
+            "latest_date": max_date,
+            "size": f"{df.estimated_size('mb'):.2f} MB"
+        }
+    except FileNotFoundError:
+        summary["rankings_doubles"] = None
 
-        # Count unique countries
-        countries = players_df.filter(
-            pl.col("country_code").is_not_null()
-        )["country_code"].n_unique()
+    # Players
+    try:
+        df = load_data("players.parquet")
+
+        # Count players with bio data (at least one bio field filled)
+        bio_fields = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
+        has_bio = df.select(
+            pl.any_horizontal([pl.col(field).is_not_null() for field in bio_fields if field in df.columns])
+        ).to_series()
+
+        with_bio = has_bio.sum() if len(has_bio) > 0 else 0
+        missing_bio = len(df) - with_bio
+
+        # Count unique countries (use "country" column, not "country_code")
+        countries = 0
+        if "country" in df.columns:
+            countries = df.select(pl.col("country").n_unique()).item()
 
         summary["players"] = {
-            "count": len(players_df),
-            "with_bio": len(has_bio),
-            "missing_bio": missing_bio,
+            "count": len(df),
+            "with_bio": int(with_bio),
+            "missing_bio": int(missing_bio),
             "countries": countries,
-            "size": format_file_size("players.parquet")
+            "size": f"{df.estimated_size('mb'):.2f} MB"
         }
     except FileNotFoundError:
         summary["players"] = None
     except Exception as e:
-        logger.error(f"Error loading players data: {e}")
-        summary["players"] = None
+        logger.error(f"Error processing players data: {e}")
+        summary["players"] = {"error": str(e)}
 
-    # === SINGLES RANKINGS ===
+    # Tournaments
     try:
-        singles_df = load_data("singles_rankings.parquet")
+        df = load_data("tournaments.parquet")
 
-        min_date = singles_df.select(pl.col("date").min()).item()
-        max_date = singles_df.select(pl.col("date").max()).item()
-        unique_players = singles_df["player_id"].n_unique()
+        year_range = None
+        if "year" in df.columns:
+            min_year = df.select(pl.col("year").min()).item()
+            max_year = df.select(pl.col("year").max()).item()
+            year_range = f"{min_year}-{max_year}"
 
-        summary["rankings_singles"] = {
-            "count": len(singles_df),
-            "unique_players": unique_players,
-            "date_range": f"{min_date} to {max_date}",
-            "latest_date": str(max_date),
-            "size": format_file_size("singles_rankings.parquet")
-        }
-    except FileNotFoundError:
-        summary["rankings_singles"] = None
-    except Exception as e:
-        logger.error(f"Error loading singles rankings: {e}")
-        summary["rankings_singles"] = None
+        tournament_types = []
+        if "tournament_type" in df.columns:
+            tournament_types = df.select(pl.col("tournament_type").unique()).to_series().to_list()
 
-    # === DOUBLES RANKINGS ===
-    try:
-        doubles_df = load_data("doubles_rankings.parquet")
-
-        min_date = doubles_df.select(pl.col("date").min()).item()
-        max_date = doubles_df.select(pl.col("date").max()).item()
-        unique_players = doubles_df["player_id"].n_unique()
-
-        summary["rankings_doubles"] = {
-            "count": len(doubles_df),
-            "unique_players": unique_players,
-            "date_range": f"{min_date} to {max_date}",
-            "latest_date": str(max_date),
-            "size": format_file_size("doubles_rankings.parquet")
-        }
-    except FileNotFoundError:
-        summary["rankings_doubles"] = None
-    except Exception as e:
-        logger.error(f"Error loading doubles rankings: {e}")
-        summary["rankings_doubles"] = None
-
-    # === TOURNAMENTS ===
-    try:
-        tournaments_df = load_tournaments()
-
-        # Get year range
-        min_year = tournaments_df.select(pl.col("year").min()).item()
-        max_year = tournaments_df.select(pl.col("year").max()).item()
-
-        # Get unique tournament types
-        types = tournaments_df["tournament_type"].unique().sort().to_list()
-
-        # Count tournaments with winners
-        has_singles_winner = "singles_winner_id" in tournaments_df.columns
-        has_doubles_winner = "doubles_winner_ids" in tournaments_df.columns
-
-        if has_singles_winner and has_doubles_winner:
-            with_winners = tournaments_df.filter(
-                (pl.col("singles_winner_id").is_not_null()) |
-                (pl.col("doubles_winner_ids").is_not_null())
-            )
-        elif has_singles_winner:
-            with_winners = tournaments_df.filter(
-                pl.col("singles_winner_id").is_not_null()
-            )
-        elif has_doubles_winner:
-            with_winners = tournaments_df.filter(
-                pl.col("doubles_winner_ids").is_not_null()
-            )
-        else:
-            with_winners = pl.DataFrame()
+        with_winners = 0
+        if "winner_name" in df.columns:
+            with_winners = df.select(pl.col("winner_name").is_not_null().sum()).item()
 
         summary["tournaments"] = {
-            "count": len(tournaments_df),
-            "year_range": f"{min_year}-{max_year}",
-            "types": types,
-            "with_winners": len(with_winners),
-            "size": format_file_size("tournaments.parquet")
+            "count": len(df),
+            "year_range": year_range,
+            "types": tournament_types,
+            "with_winners": with_winners,
+            "size": f"{df.estimated_size('mb'):.2f} MB"
         }
     except FileNotFoundError:
-        summary["tournaments"] = None
-    except Exception as e:
-        logger.error(f"Error loading tournaments: {e}")
         summary["tournaments"] = None
 
     return summary

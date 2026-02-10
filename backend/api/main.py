@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
 from typing import Optional, List
+import polars as pl
 
 # Import storage functions
 from backend.storage.s3_data_store import (
@@ -69,25 +70,39 @@ def search_players(q: str = Query(..., min_length=1)):
 
 @app.get("/rankings/stored")
 def get_stored_rankings(
-    ranking_type: str = Query(..., pattern="^(singles|doubles)$"),
-    player_ids: str = Query(..., description="Comma-separated player IDs")
+    ranking_type: str = Query(default="singles", pattern="^(singles|doubles)$"),
+    player_ids: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, le=1000),
+    latest_only: bool = Query(default=False)
 ):
-    """Get stored ranking history for specified players."""
+    """Get stored ranking history."""
     try:
-        player_id_list = [pid.strip() for pid in player_ids.split(",")]
-
         if ranking_type == "singles":
             df = load_singles_rankings()
         else:
             df = load_doubles_rankings()
-
+        
         if df is None or len(df) == 0:
             return []
-
-        # Filter by player IDs
-        filtered = df.filter(df["player_id"].is_in(player_id_list))
-
-        return filtered.to_dicts()
+        
+        # Filter by player IDs if provided
+        if player_ids:
+            player_id_list = [pid.strip() for pid in player_ids.split(",")]
+            df = df.filter(df["player_id"].is_in(player_id_list))
+        
+        # Get only latest ranking per player
+        if latest_only:
+            df = df.sort("date", descending=True).group_by("player_id").head(1)
+        
+        # Sort by rank
+        if "rank" in df.columns:
+            df = df.sort("rank")
+        
+        # Apply limit
+        df = df.head(limit)
+        
+        return df.to_dicts()
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -111,6 +126,48 @@ def get_tournaments(
             df = df.filter(df["tournament_type"] == tournament_type)
 
         return df.to_dicts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/players")
+def get_players(
+    country: Optional[str] = None,
+    limit: int = Query(default=100, le=500),
+    has_bio: Optional[bool] = None
+):
+    """Get all players with optional filtering."""
+    try:
+        players_df = load_players()
+        if players_df is None or len(players_df) == 0:
+            return []
+        
+        # Filter by country
+        if country:
+            mask = players_df["country"].str.to_lowercase().str.contains(country.lower())
+            players_df = players_df.filter(mask)
+        
+        # Filter by bio data
+        if has_bio is not None:
+            bio_fields = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
+            if has_bio:
+                mask = pl.any_horizontal([
+                    pl.col(field).is_not_null() 
+                    for field in bio_fields 
+                    if field in players_df.columns
+                ])
+            else:
+                mask = pl.all_horizontal([
+                    pl.col(field).is_null() 
+                    for field in bio_fields 
+                    if field in players_df.columns
+                ])
+            players_df = players_df.filter(mask)
+        
+        # Apply limit
+        players_df = players_df.head(limit)
+        
+        return players_df.to_dicts()
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
