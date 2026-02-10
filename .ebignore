@@ -1,0 +1,15 @@
+# Don't upload to EB
+data/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.env
+.admin-password.txt
+*.log
+*.parquet
+.DS_Store
+.idea/

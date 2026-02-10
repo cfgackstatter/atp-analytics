@@ -8,6 +8,10 @@ venv/
 env/
 ENV/
 
+# Environment files (IMPORTANT: Contains secrets!)
+.env
+.admin-password.txt
+
 # Data files (large parquet files)
 data/
 *.parquet
@@ -41,3 +45,8 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
