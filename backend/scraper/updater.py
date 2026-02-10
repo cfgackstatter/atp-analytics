@@ -9,7 +9,7 @@ from backend.scraper.player_scraper import scrape_player
 from backend.scraper.config import BIO_COLUMNS
 from backend.scraper.schemas import RANKINGS_SCHEMA, PLAYERS_SCHEMA
 from backend.scraper.player_utils import generate_player_slug
-from backend.storage.data_store import (
+from backend.storage.s3_data_store import (
     load_rankings, save_rankings,
     load_players, save_players,
     upsert_data

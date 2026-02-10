@@ -9,7 +9,7 @@ sys.path.append('.')
 from backend.scraper.tournament_scraper import scrape_tournaments
 from backend.scraper.config import VALID_TOURNAMENT_TYPES
 from backend.scraper.schemas import TOURNAMENTS_SCHEMA
-from backend.storage.data_store import load_tournaments, save_tournaments, upsert_data
+from backend.storage.s3_data_store import load_tournaments, save_tournaments, upsert_data
 import polars as pl
 
 # Configure logging

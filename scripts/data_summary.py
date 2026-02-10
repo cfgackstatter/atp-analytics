@@ -9,7 +9,7 @@ sys.path.append('.')
 
 from pathlib import Path
 import polars as pl
-from backend.storage.data_store import DATA_DIR, load_rankings, load_players, load_tournaments
+from backend.storage.s3_data_store import DATA_DIR, load_rankings, load_players, load_tournaments
 
 def print_header(title: str):
     """Print a formatted section header."""

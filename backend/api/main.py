@@ -2,171 +2,241 @@
 """FastAPI application for ATP Analytics."""
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import date, datetime
-import polars as pl
+import os
+from pathlib import Path
+from typing import Optional, List
 
-from backend.scraper.updater import update_rankings
-from backend.scraper.tournament_scraper import scrape_tournaments
-from backend.scraper.schemas import TOURNAMENTS_SCHEMA
-from backend.storage.data_store import (
-    load_rankings,
+# Import storage functions
+from backend.storage.s3_data_store import (
     load_players,
-    load_tournaments,
-    save_tournaments,
-    upsert_data
+    load_singles_rankings,
+    load_doubles_rankings,
+    load_tournaments
 )
 
-app = FastAPI(title="ATP Analytics API", version="1.0.0")
+# Import admin router
+from backend.api.admin import router as admin_router
+
+app = FastAPI(
+    title="ATP Analytics API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Include admin router
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
+
+# === API ROUTES ===
 
 @app.get("/health")
-def health():
+def health_check():
     """Health check endpoint."""
-    return {"status": "ok"}
-
+    return {
+        "status": "ok",
+        "timestamp": "2026-02-10T02:00:00",
+        "storage": os.getenv("USE_S3", "false")
+    }
 
 @app.get("/players/search")
-def search_players(q: str = Query("", min_length=0)):
-    """
-    Search players by name.
-
-    Args:
-        q: Search query string
-
-    Returns:
-        List of up to 10 matching players
-    """
+def search_players(q: str = Query(..., min_length=1)):
+    """Search for players by name."""
     try:
-        players = load_players()
-    except FileNotFoundError:
-        return []
+        players_df = load_players()
 
-    if not q:
-        return []
+        if players_df is None or len(players_df) == 0:
+            return []
 
-    filtered = players.filter(
-        pl.col("player_name").str.to_lowercase().str.contains(q.lower())
-    )
+        # Filter players by search query
+        mask = players_df["player_name"].str.to_lowercase().str.contains(q.lower())
+        results = players_df.filter(mask)
 
-    return filtered.head(10).to_dicts()
-
-
-@app.get("/tournaments")
-def get_tournaments():
-    """
-    Get all tournaments.
-
-    Returns:
-        List of all tournaments with winners
-    """
-    try:
-        df = load_tournaments()
-        return df.to_dicts()
-    except FileNotFoundError:
-        return []
-
+        return results.to_dicts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/rankings/stored")
 def get_stored_rankings(
-    ranking_type: str = Query("singles", pattern="^(singles|doubles)$"),
-    player_ids: str = Query(""),
-    ranking_date: date | None = None,
+    ranking_type: str = Query(..., pattern="^(singles|doubles)$"),
+    player_ids: str = Query(..., description="Comma-separated player IDs")
 ):
-    """
-    Read rankings from Parquet and filter by player_ids and/or date.
-
-    Args:
-        ranking_type: 'singles' or 'doubles'
-        player_ids: Comma-separated player IDs
-        ranking_date: Optional date filter (YYYY-MM-DD)
-
-    Returns:
-        List of ranking records matching filters
-    """
+    """Get stored ranking history for specified players."""
     try:
-        df = load_rankings(ranking_type)
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail="No data found. Run update first."
-        )
+        player_id_list = [pid.strip() for pid in player_ids.split(",")]
 
-    if player_ids:
-        ids = [id.strip() for id in player_ids.split(",") if id.strip()]
-        df = df.filter(pl.col("player_id").is_in(ids))
+        if ranking_type == "singles":
+            df = load_singles_rankings()
+        else:
+            df = load_doubles_rankings()
 
-    if ranking_date:
-        df = df.filter(pl.col("date") == ranking_date.isoformat())
+        if df is None or len(df) == 0:
+            return []
 
-    return df.to_dicts()
+        # Filter by player IDs
+        filtered = df.filter(df["player_id"].is_in(player_id_list))
 
+        return filtered.to_dicts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/admin/update-rankings")
-def trigger_update(
-    ranking_type: str = Query("singles", pattern="^(singles|doubles)$"),
-    max_weeks: int | None = Query(None, ge=1, le=100)
+@app.get("/tournaments")
+def get_tournaments(
+    year: Optional[int] = None,
+    tournament_type: Optional[str] = None
 ):
-    """
-    Manually trigger rankings update (admin endpoint).
+    """Get tournament data."""
+    try:
+        df = load_tournaments()
 
-    Args:
-        ranking_type: 'singles' or 'doubles'
-        max_weeks: Maximum number of weeks to scrape (optional)
+        if df is None or len(df) == 0:
+            return []
 
-    Returns:
-        Update summary with count of weeks scraped
-    """
-    count = update_rankings(ranking_type, max_weeks)
-    return {
-        "ranking_type": ranking_type,
-        "weeks_updated": count,
-        "timestamp": datetime.now().isoformat()
-    }
+        # Apply filters
+        if year:
+            df = df.filter(df["year"] == year)
 
+        if tournament_type:
+            df = df.filter(df["tournament_type"] == tournament_type)
+
+        return df.to_dicts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# === TASK ENDPOINTS ===
 
 @app.post("/tasks/update-weekly")
-def scheduled_weekly_update():
-    """
-    Scheduled task to update rankings and tournaments (called by cron).
+def update_weekly():
+    """Weekly data update task (called by EventBridge)."""
+    from backend.scraper.updater import update_rankings, update_player_bio
 
-    Updates:
-    - Last 5 weeks of singles rankings
-    - Last 5 weeks of doubles rankings
-    - Current year ATP tournaments
+    try:
+        # Run updates
+        singles_weeks = update_rankings("singles", max_weeks=2)
+        doubles_weeks = update_rankings("doubles", max_weeks=2)
+        players_updated = update_player_bio(num_players=10)
 
-    Returns:
-        Summary of updates performed
-    """
-    # Update last 5 weeks of rankings
-    singles_count = update_rankings("singles", max_weeks=5)
-    doubles_count = update_rankings("doubles", max_weeks=5)
+        result = {
+            "singles_weeks": singles_weeks,
+            "doubles_weeks": doubles_weeks,
+            "players_updated": players_updated
+        }
 
-    # Update current year tournaments
-    current_year = datetime.now().year
-    new_tournaments = scrape_tournaments(current_year, 'atp')
+        return {
+            "status": "success",
+            "message": "Weekly update completed",
+            "timestamp": "2026-02-10T02:00:00",
+            **result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": "2026-02-10T02:00:00"
+        }
 
-    existing_tournaments = load_tournaments(schema=TOURNAMENTS_SCHEMA)
-    combined_tournaments = upsert_data(
-        new_tournaments,
-        existing_tournaments,
-        ['year', 'tournament_type', 'tournament_name']
-    )
-    save_tournaments(combined_tournaments)
+# === FRONTEND SERVING ===
 
+# Get static directory path
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+# Mount static assets (CSS, JS, images)
+if STATIC_DIR.exists():
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/favicon.ico")
+    @app.head("/favicon.ico")
+    def serve_favicon_ico():
+        """Serve favicon.ico."""
+        favicon_path = STATIC_DIR / "favicon.ico"
+        if favicon_path.exists():
+            return FileResponse(favicon_path, media_type="image/x-icon")
+        raise HTTPException(status_code=404)
+
+    @app.get("/favicon.png")
+    @app.head("/favicon.png")
+    def serve_favicon_png():
+        """Serve favicon.png."""
+        favicon_path = STATIC_DIR / "favicon.png"
+        if favicon_path.exists():
+            return FileResponse(favicon_path, media_type="image/png")
+        raise HTTPException(status_code=404)
+
+    @app.get("/logo.png")
+    @app.head("/logo.png")
+    def serve_logo_png():
+        """Serve logo.png."""
+        logo_path = STATIC_DIR / "logo.png"
+        if logo_path.exists():
+            return FileResponse(logo_path, media_type="image/png")
+        raise HTTPException(status_code=404)
+
+    @app.get("/logo.svg")
+    @app.head("/logo.svg")
+    def serve_logo_svg():
+        """Serve logo.svg."""
+        logo_path = STATIC_DIR / "logo.svg"
+        if logo_path.exists():
+            return FileResponse(logo_path, media_type="image/svg+xml")
+        raise HTTPException(status_code=404)
+
+    @app.get("/vite.svg")
+    @app.head("/vite.svg")
+    def serve_vite_svg():
+        """Serve vite.svg."""
+        svg_path = STATIC_DIR / "vite.svg"
+        if svg_path.exists():
+            return FileResponse(svg_path)
+        raise HTTPException(status_code=404)
+
+# Serve React app at root (MUST BE LAST!)
+@app.get("/", include_in_schema=False)
+async def serve_frontend():
+    """Serve the React frontend index.html."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    # Fallback if frontend not built
     return {
-        "singles_weeks_updated": singles_count,
-        "doubles_weeks_updated": doubles_count,
-        "tournaments_updated": len(new_tournaments),
-        "timestamp": datetime.now().isoformat(),
-        "message": "Weekly update completed"
+        "name": "ATP Analytics API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "message": "Frontend not found. Build frontend and copy to backend/static/"
     }
+
+# Catch-all route for React Router (SPA routing)
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str):
+    """
+    Catch-all route for Single Page Application routing.
+    Serves index.html for any non-API routes.
+    """
+    # Don't intercept API routes, docs, or admin
+    if (full_path.startswith("api/") or 
+        full_path.startswith("docs") or 
+        full_path.startswith("redoc") or
+        full_path.startswith("admin/") or
+        full_path.startswith("tasks/") or
+        full_path.startswith("health") or
+        full_path.startswith("players/") or
+        full_path.startswith("rankings/") or
+        full_path.startswith("tournaments")):
+        raise HTTPException(status_code=404)
+
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404)

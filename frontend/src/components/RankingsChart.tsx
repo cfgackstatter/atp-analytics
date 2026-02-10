@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
   TimeScale,
+  ScatterController,
 } from 'chart.js';
 import type { InteractionMode } from 'chart.js';
 import { Line } from 'react-chartjs-2';
@@ -24,7 +25,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  TimeScale
+  TimeScale,
+  ScatterController
 );
 
 interface RankingData {

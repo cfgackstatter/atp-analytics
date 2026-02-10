@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATP Analytics - Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 15px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        /* Password Section - More Compact */
+        .password-section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .password-section h2 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .password-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .password-input-group input {
+            flex: 1;
+            max-width: 300px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .password-status {
+            font-size: 13px;
+            color: #27ae60;
+        }
+
+        /* Grid Layout for Sections */
+        .sections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 12px;
+            font-size: 18px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* ✅ FIX: Checkbox alignment */
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 5px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .checkbox-item label {
+            margin: 0;
+            font-size: 13px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        /* Data Summary - More Compact */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .summary-card {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+
+        .summary-card h3 {
+            font-size: 14px;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .summary-info {
+            font-size: 12px;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        .summary-info strong {
+            color: #2c3e50;
+        }
+
+        /* Job Status */
+        .job-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .job-item {
+            background: #f8f9fa;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border-left: 4px solid #3498db;
+            font-size: 13px;
+        }
+
+        .job-item.running {
+            border-left-color: #f39c12;
+            background: #fff8e1;
+        }
+
+        .job-item.completed {
+            border-left-color: #27ae60;
+            background: #e8f5e9;
+        }
+
+        .job-item.failed {
+            border-left-color: #e74c3c;
+            background: #ffebee;
+        }
+
+        .job-header {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .job-details {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-running { background: #fff3cd; color: #856404; }
+        .status-completed { background: #d4edda; color: #155724; }
+        .status-failed { background: #f8d7da; color: #721c24; }
+
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #95a5a6;
+            font-size: 14px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sections-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎾 ATP Analytics Admin</h1>
+        <p class="subtitle">Manage data updates and monitor scraping jobs</p>
+
+        <!-- Password Section -->
+        <div class="password-section">
+            <h2>🔐 Admin Password</h2>
+            <div class="password-input-group">
+                <input type="password" id="password" placeholder="Enter admin password">
+                <span class="password-status" id="passwordStatus"></span>
+            </div>
+        </div>
+
+        <!-- Main Sections Grid -->
+        <div class="sections-grid">
+            <!-- Update Rankings -->
+            <div class="section">
+                <h2>📊 Update Rankings</h2>
+                <div class="form-group">
+                    <label>Ranking Type</label>
+                    <select id="rankingType">
+                        <option value="singles">Singles</option>
+                        <option value="doubles">Doubles</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Max Weeks (1-500)</label>
+                    <input type="number" id="maxWeeks" value="20" min="1" max="500">
+                    <p class="help-text">Initial load: 50-100 weeks. Weekly update: 2-5 weeks.</p>
+                </div>
+                <button onclick="updateRankings()">Update Rankings</button>
+            </div>
+
+            <!-- Update Tournaments -->
+            <div class="section">
+                <h2>🏆 Update Tournaments</h2>
+                <div class="form-group">
+                    <label>Start Year</label>
+                    <input type="number" id="startYear" value="2020" min="1990" max="2030">
+                </div>
+                <div class="form-group">
+                    <label>End Year</label>
+                    <input type="number" id="endYear" value="2025" min="1990" max="2030">
+                </div>
+                <div class="form-group">
+                    <label>Tournament Types</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="type_atp" value="atp" checked>
+                            <label for="type_atp">ATP</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="type_gs" value="gs" checked>
+                            <label for="type_gs">Grand Slam</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="type_ch" value="ch">
+                            <label for="type_ch">Challenger</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="type_fu" value="fu">
+                            <label for="type_fu">ITF</label>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="updateTournaments()">Update Tournaments</button>
+            </div>
+
+            <!-- Update Players -->
+            <div class="section">
+                <h2>👤 Update Players</h2>
+                <div class="form-group">
+                    <label>Number of Players (1-500)</label>
+                    <input type="number" id="numPlayers" value="50" min="1" max="500">
+                    <p class="help-text">Scrapes biographical data for top N players.</p>
+                </div>
+                <button onclick="updatePlayers()">Update Players</button>
+            </div>
+        </div>
+
+        <!-- Data Summary -->
+        <div class="section">
+            <h2>📈 Data Summary</h2>
+            <button onclick="refreshDataSummary()">Refresh Data Summary</button>
+            <div id="dataSummary" class="summary-grid" style="margin-top: 15px;">
+                <div class="empty-state">Click "Refresh Data Summary" to load stats</div>
+            </div>
+        </div>
+
+        <!-- Job Status -->
+        <div class="section">
+            <h2>🔄 Job Status</h2>
+            <p class="help-text" style="margin-bottom: 10px;">Auto-refreshes every 5 seconds</p>
+            <div id="jobStatus">
+                <div class="empty-state">Loading jobs...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let autoRefreshInterval;
+
+        // Get password
+        function getPassword() {
+            const pwd = document.getElementById('password').value;
+            if (!pwd) {
+                alert('Please enter admin password');
+                return null;
+            }
+            return pwd;
+        }
+
+        // Update password status
+        document.getElementById('password').addEventListener('input', (e) => {
+            const status = document.getElementById('passwordStatus');
+            if (e.target.value) {
+                status.textContent = '✓ Password set';
+            } else {
+                status.textContent = '';
+            }
+        });
+
+        // Update Rankings
+        async function updateRankings() {
+            const password = getPassword();
+            if (!password) return;
+
+            const rankingType = document.getElementById('rankingType').value;
+            const maxWeeks = document.getElementById('maxWeeks').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/update-rankings?ranking_type=${rankingType}&max_weeks=${maxWeeks}&password=${password}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                } else {
+                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Update Tournaments
+        async function updateTournaments() {
+            const password = getPassword();
+            if (!password) return;
+
+            const startYear = document.getElementById('startYear').value;
+            const endYear = document.getElementById('endYear').value;
+
+            // Get checked types
+            const types = [];
+            ['atp', 'gs', 'ch', 'fu'].forEach(type => {
+                if (document.getElementById(`type_${type}`).checked) {
+                    types.push(type);
+                }
+            });
+
+            if (types.length === 0) {
+                alert('Please select at least one tournament type');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/update-tournaments?start_year=${startYear}&end_year=${endYear}&types=${types.join(',')}&password=${password}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                } else {
+                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Update Players
+        async function updatePlayers() {
+            const password = getPassword();
+            if (!password) return;
+
+            const numPlayers = document.getElementById('numPlayers').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/update-players?num_players=${numPlayers}&password=${password}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                } else {
+                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Refresh Data Summary
+        async function refreshDataSummary() {
+            const password = getPassword();
+            if (!password) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/data-summary?password=${password}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                    return;
+                }
+
+                // Display summary
+                const summaryDiv = document.getElementById('dataSummary');
+                summaryDiv.innerHTML = '';
+
+                // Players
+                if (data.players) {
+                    summaryDiv.innerHTML += `
+                        <div class="summary-card">
+                            <h3>👤 Players</h3>
+                            <div class="summary-info">
+                                <strong>Total:</strong> ${data.players.count || 0} players<br>
+                                <strong>With Bio:</strong> ${data.players.with_bio || 0}<br>
+                                <strong>Missing Bio:</strong> ${data.players.missing_bio || 0}<br>
+                                <strong>Countries:</strong> ${data.players.countries || 0}<br>
+                                <strong>File Size:</strong> ${data.players.size || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Singles Rankings
+                if (data.rankings_singles) {
+                    summaryDiv.innerHTML += `
+                        <div class="summary-card">
+                            <h3>📊 Singles Rankings</h3>
+                            <div class="summary-info">
+                                <strong>Total:</strong> ${data.rankings_singles.count || 0} records<br>
+                                <strong>Players:</strong> ${data.rankings_singles.unique_players || 0}<br>
+                                <strong>Date Range:</strong> ${data.rankings_singles.date_range || 'N/A'}<br>
+                                <strong>Latest:</strong> ${data.rankings_singles.latest_date || 'N/A'}<br>
+                                <strong>File Size:</strong> ${data.rankings_singles.size || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Doubles Rankings
+                if (data.rankings_doubles) {
+                    summaryDiv.innerHTML += `
+                        <div class="summary-card">
+                            <h3>📊 Doubles Rankings</h3>
+                            <div class="summary-info">
+                                <strong>Total:</strong> ${data.rankings_doubles.count || 0} records<br>
+                                <strong>Players:</strong> ${data.rankings_doubles.unique_players || 0}<br>
+                                <strong>Date Range:</strong> ${data.rankings_doubles.date_range || 'N/A'}<br>
+                                <strong>Latest:</strong> ${data.rankings_doubles.latest_date || 'N/A'}<br>
+                                <strong>File Size:</strong> ${data.rankings_doubles.size || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Tournaments
+                if (data.tournaments) {
+                    summaryDiv.innerHTML += `
+                        <div class="summary-card">
+                            <h3>🏆 Tournaments</h3>
+                            <div class="summary-info">
+                                <strong>Total:</strong> ${data.tournaments.count || 0} tournaments<br>
+                                <strong>Year Range:</strong> ${data.tournaments.year_range || 'N/A'}<br>
+                                <strong>Types:</strong> ${data.tournaments.types ? data.tournaments.types.join(', ').toUpperCase() : 'N/A'}<br>
+                                <strong>With Winners:</strong> ${data.tournaments.with_winners || 0}<br>
+                                <strong>File Size:</strong> ${data.tournaments.size || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Storage info
+                summaryDiv.innerHTML += `
+                    <div class="summary-card">
+                        <h3>💾 Storage</h3>
+                        <div class="summary-info">
+                            <strong>Type:</strong> ${data.storage || 'Local'}<br>
+                            <strong>Location:</strong> ${data.storage === 's3' ? 'AWS S3' : 'data/ folder'}<br>
+                            <strong>Updated:</strong> ${new Date(data.timestamp).toLocaleString()}
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Fetch Jobs
+        async function fetchJobs() {
+            const password = document.getElementById('password').value;
+            if (!password) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/jobs?password=${password}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    document.getElementById('jobStatus').innerHTML = '<div class="empty-state">Error loading jobs</div>';
+                    return;
+                }
+
+                const statusDiv = document.getElementById('jobStatus');
+
+                if (data.active.length === 0 && data.completed.length === 0) {
+                    statusDiv.innerHTML = '<div class="empty-state">No jobs yet. Start an update to see jobs here.</div>';
+                    return;
+                }
+
+                let html = '<div class="job-list">';
+
+                // Active jobs
+                if (data.active.length > 0) {
+                    html += '<h3 style="font-size: 14px; margin-bottom: 8px; color: #f39c12;">⚡ Active Jobs</h3>';
+                    data.active.forEach(job => {
+                        html += `
+                            <div class="job-item running">
+                                <div class="job-header">
+                                    <span class="status-badge status-running">${job.status}</span>
+                                    ${job.type} - ${job.ranking_type || job.tournament_types || `${job.num_players} players`}
+                                </div>
+                                <div class="job-details">
+                                    Started: ${new Date(job.started).toLocaleString()}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                // Completed jobs
+                if (data.completed.length > 0) {
+                    html += '<h3 style="font-size: 14px; margin: 12px 0 8px; color: #27ae60;">✓ Recent Jobs</h3>';
+                    data.completed.slice(0, 10).forEach(job => {
+                        const isSuccess = job.status === 'completed';
+                        html += `
+                            <div class="job-item ${isSuccess ? 'completed' : 'failed'}">
+                                <div class="job-header">
+                                    <span class="status-badge status-${job.status}">${job.status}</span>
+                                    ${job.type} - ${job.ranking_type || job.tournament_types || `${job.players_updated} players`}
+                                </div>
+                                <div class="job-details">
+                                    ${job.weeks_scraped ? `Weeks: ${job.weeks_scraped}` : ''}
+                                    ${job.tournaments_scraped ? `Tournaments: ${job.tournaments_scraped}` : ''}
+                                    ${job.players_updated ? `Players: ${job.players_updated}` : ''}
+                                    | Completed: ${new Date(job.completed).toLocaleString()}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                html += '</div>';
+                statusDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error fetching jobs:', error);
+            }
+        }
+
+        // Auto-refresh jobs every 5 seconds
+        document.getElementById('password').addEventListener('input', (e) => {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+
+            if (e.target.value) {
+                // Fetch immediately
+                fetchJobs();
+
+                // Then every 5 seconds
+                autoRefreshInterval = setInterval(fetchJobs, 5000);
+            }
+        });
+
+        // Initial load
+        setTimeout(() => {
+            if (document.getElementById('password').value) {
+                fetchJobs();
+            }
+        }, 100);
+    </script>
+</body>
+</html>

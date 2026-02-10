@@ -20,8 +20,9 @@ interface Tournament {
   year: number;
   tournament_type: string;
   tournament_name: string;
-  start_date: string;
-  end_date: string;
+  venue: string | null;  // ← ADDED THIS
+  start_date: string | null;
+  end_date: string | null;
   singles_winner_id: string | null;
   doubles_winner_ids: string | null;
 }

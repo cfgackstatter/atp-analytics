@@ -1,7 +1,0 @@
-# cron.yaml
-version: 1
-cron:
-  - name: "update-tennis-data-weekly"
-    url: "/tasks/update-weekly"
-    schedule: "0 15 * * MON"   # Every Monday 15:00 UTC
-    description: "Update last 5 weeks of rankings and current year tournaments"
