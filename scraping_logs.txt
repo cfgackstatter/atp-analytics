@@ -1,4 +1,0 @@
-Retrieving logs...
-Logs were saved to /home/christoph/projects/atp-analytics/.elasticbeanstalk/logs/260211_130102
-Logs were saved to /home/christoph/projects/atp-analytics/.elasticbeanstalk/logs/260211_130102
-Updated symlink at /home/christoph/projects/atp-analytics/.elasticbeanstalk/logs/latest
