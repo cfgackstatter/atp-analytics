@@ -4,14 +4,17 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
-# Set Playwright browser path
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Install Playwright browsers (use default location)
+RUN playwright install chromium
+RUN playwright install-deps chromium
 
-# Install Playwright browsers with system dependencies
-RUN playwright install chromium --with-deps
+# Verify browsers are installed (build fails if not)
+RUN python -c "from playwright.sync_api import sync_playwright; \
+    p = sync_playwright().start(); \
+    print(f'Chromium executable: {p.chromium.executable_path}'); \
+    p.stop()" || (echo "ERROR: Browsers not found!" && exit 1)
 
 # Copy application code
 COPY backend/ ./backend/
@@ -19,10 +22,8 @@ COPY application.py .
 
 EXPOSE 8000
 
-# Run with gunicorn
 CMD ["gunicorn", "application:application", \
      "-b", "0.0.0.0:8000", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--workers", "2", \
-     "--timeout", "120", \
-     "--preload"]
+     "--timeout", "120"]
