@@ -58,72 +58,98 @@ def scrape_player(
 ) -> dict:
     """
     Scrape player bio data using headless browser.
-
+    
     Args:
         player_id: ATP player ID
         player_slug: URL slug for player name
         max_retries: Maximum retry attempts
-
+    
     Returns:
         Dictionary of bio data, empty dict on failure
     """
     url = f"{PLAYER_OVERVIEW_URL}/{player_slug}/{player_id}/overview"
-
+    
     for attempt in range(max_retries):
         try:
+            logger.info(f"Attempting to scrape player {player_id} (attempt {attempt + 1}/{max_retries})")
+            
             with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=[
-                        '--no-sandbox',              # Critical for EB/Docker
-                        '--disable-setuid-sandbox',  # Critical for EB/Docker
-                        '--disable-dev-shm-usage',   # Use /tmp instead of /dev/shm
-                        '--disable-gpu',             # Not needed on server
-                        '--disable-software-rasterizer',
-                        '--disable-extensions'
-                    ]
-                )
+                try:
+                    # Log browser launch attempt
+                    logger.info(f"Launching Chromium browser for player {player_id}")
+                    browser = p.chromium.launch(
+                        headless=True,
+                        args=[
+                            '--no-sandbox',              # Critical for EB/Docker
+                            '--disable-setuid-sandbox',  # Critical for EB/Docker
+                            '--disable-dev-shm-usage',   # Use /tmp instead of /dev/shm
+                            '--disable-gpu',             # Not needed on server
+                            '--disable-software-rasterizer',
+                            '--disable-extensions'
+                        ]
+                    )
+                    logger.info(f"Browser launched successfully for player {player_id}")
+                    
+                except Exception as browser_error:
+                    logger.error(
+                        f"Browser launch failed for player {player_id}: "
+                        f"{type(browser_error).__name__}: {str(browser_error)}"
+                    )
+                    raise
                 
-                page = browser.new_page()
-                page.goto(url, wait_until='networkidle', timeout=30000)
-                content = page.content()
-                browser.close()
-
-            soup = BeautifulSoup(content, "html.parser")
-            pd_content = soup.find('div', class_='pd_content')
-
-            if not pd_content:
-                logger.warning(f"No bio content found for player {player_id}")
-                return {}
-
-            data = {}
-            for li in pd_content.find_all('li'):
-                spans = li.find_all('span', recursive=False)
-                if len(spans) < 2:
-                    continue
-
-                label = spans[0].get_text(strip=True)
-                value = spans[1].get_text(strip=True)
-
-                if label in ['Age', 'DOB']:
-                    data['birthdate'] = _extract_date(value)
-                elif label == 'Weight':
-                    data['weight_kg'] = _extract_weight_kg(value)
-                elif label == 'Height':
-                    data['height_cm'] = _extract_height_cm(value)
-                elif label == 'Turned pro':
-                    data['turned_pro'] = int(value) if value.isdigit() else None
-                elif label == 'Country':
-                    data['country'] = value.split('\n')[0].strip() or None
-                elif label == 'Birthplace':
-                    data['birthplace'] = value or None
-                elif label == 'Plays':
-                    data['handedness'], data['backhand'] = _parse_plays(value)
-                elif label == 'Coach':
-                    data['coach'] = value or None
-
-            return data
-
+                try:
+                    page = browser.new_page()
+                    logger.info(f"Navigating to {url}")
+                    page.goto(url, wait_until='networkidle', timeout=30000)
+                    content = page.content()
+                    logger.info(f"Page loaded successfully for player {player_id}")
+                    
+                except Exception as page_error:
+                    logger.error(
+                        f"Page navigation failed for player {player_id}: "
+                        f"{type(page_error).__name__}: {str(page_error)}"
+                    )
+                    raise
+                    
+                finally:
+                    browser.close()
+                
+                soup = BeautifulSoup(content, "html.parser")
+                pd_content = soup.find('div', class_='pd_content')
+                
+                if not pd_content:
+                    logger.warning(f"No bio content found for player {player_id}")
+                    return {}
+                
+                data = {}
+                for li in pd_content.find_all('li'):
+                    spans = li.find_all('span', recursive=False)
+                    if len(spans) < 2:
+                        continue
+                    
+                    label = spans[0].get_text(strip=True)
+                    value = spans[1].get_text(strip=True)
+                    
+                    if label in ['Age', 'DOB']:
+                        data['birthdate'] = _extract_date(value)
+                    elif label == 'Weight':
+                        data['weight_kg'] = _extract_weight_kg(value)
+                    elif label == 'Height':
+                        data['height_cm'] = _extract_height_cm(value)
+                    elif label == 'Turned pro':
+                        data['turned_pro'] = int(value) if value.isdigit() else None
+                    elif label == 'Country':
+                        data['country'] = value.split('\n')[0].strip() or None
+                    elif label == 'Birthplace':
+                        data['birthplace'] = value or None
+                    elif label == 'Plays':
+                        data['handedness'], data['backhand'] = _parse_plays(value)
+                    elif label == 'Coach':
+                        data['coach'] = value or None
+                
+                logger.info(f"Successfully scraped player {player_id}: {data}")
+                return data
+        
         except PlaywrightTimeoutError:
             if attempt < max_retries - 1:
                 logger.warning(
@@ -132,11 +158,19 @@ def scrape_player(
                 )
                 time.sleep(2)
             else:
-                logger.error(f"Failed to scrape player {player_id} after {max_retries} attempts")
+                logger.error(f"Failed to scrape player {player_id} after {max_retries} attempts (timeout)")
                 return {}
-
+        
         except Exception as e:
-            logger.error(f"Error scraping player {player_id}: {e}")
-            return {}
-
+            logger.error(
+                f"Unexpected error scraping player {player_id}: "
+                f"{type(e).__name__}: {str(e)}",
+                exc_info=True  # This logs the full stack trace
+            )
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying player {player_id} after error...")
+                time.sleep(2)
+            else:
+                return {}
+    
     return {}

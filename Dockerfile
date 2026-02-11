@@ -22,8 +22,12 @@ COPY application.py .
 
 EXPOSE 8000
 
+RUN mkdir -p /tmp/chromium-tmp
+ENV TMPDIR=/tmp/chromium-tmp
+
+# Use uvicorn.workers.UvicornWorker for FastAPI (ASGI)
 CMD ["gunicorn", "application:application", \
      "-b", "0.0.0.0:8000", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--workers", "2", \
-     "--timeout", "120"]
+     "--workers", "1", \
+     "--timeout", "300", \
+     "--worker-class", "uvicorn.workers.UvicornWorker"]
