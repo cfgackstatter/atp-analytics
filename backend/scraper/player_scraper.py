@@ -72,7 +72,18 @@ def scrape_player(
     for attempt in range(max_retries):
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',              # Critical for EB/Docker
+                        '--disable-setuid-sandbox',  # Critical for EB/Docker
+                        '--disable-dev-shm-usage',   # Use /tmp instead of /dev/shm
+                        '--disable-gpu',             # Not needed on server
+                        '--disable-software-rasterizer',
+                        '--disable-extensions'
+                    ]
+                )
+                
                 page = browser.new_page()
                 page.goto(url, wait_until='networkidle', timeout=30000)
                 content = page.content()
