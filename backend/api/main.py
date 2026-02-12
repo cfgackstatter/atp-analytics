@@ -72,7 +72,7 @@ def search_players(q: str = Query(..., min_length=1)):
 def get_stored_rankings(
     ranking_type: str = Query(default="singles", pattern="^(singles|doubles)$"),
     player_ids: Optional[str] = Query(default=None),
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=1000, le=5000),  # Increased default
     latest_only: bool = Query(default=False)
 ):
     """Get stored ranking history."""
@@ -89,16 +89,21 @@ def get_stored_rankings(
         if player_ids:
             player_id_list = [pid.strip() for pid in player_ids.split(",")]
             df = df.filter(df["player_id"].is_in(player_id_list))
+            # When specific players requested, return ALL their data
+            # Don't apply limit - chart needs complete history
+            return df.sort("date").to_dicts()
         
         # Get only latest ranking per player
         if latest_only:
             df = df.sort("date", descending=True).group_by("player_id").head(1)
+            # Sort by rank for leaderboard display
+            if "rank" in df.columns:
+                df = df.sort("rank")
+        else:
+            # For general queries, sort by date
+            df = df.sort("date")
         
-        # Sort by rank
-        if "rank" in df.columns:
-            df = df.sort("rank")
-        
-        # Apply limit
+        # Apply limit only for non-specific queries
         df = df.head(limit)
         
         return df.to_dicts()
