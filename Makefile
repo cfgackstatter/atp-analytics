@@ -1,4 +1,4 @@
-.PHONY: help build test deploy logs ssh clean
+.PHONY: help build test deploy logs ssh clean status
 
 # Variables
 IMAGE_NAME := atp-analytics
@@ -13,6 +13,7 @@ help:
 	@echo "  make logs        - Stream EB logs"
 	@echo "  make ssh         - SSH into EB instance"
 	@echo "  make clean       - Remove local Docker images"
+	@echo "  make status      - Show EB status and env vars"
 	@echo ""
 
 build:
@@ -29,9 +30,15 @@ test: build
 
 deploy:
 	@echo "Deploying to Elastic Beanstalk..."
-	git add -A
-	@read -p "Commit message: " msg; git commit -m "$$msg"
-	git push
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		git add -A; \
+		read -p "Commit message: " msg; \
+		git commit -m "$$msg"; \
+		git push; \
+	else \
+		echo "No changes to commit, pushing existing commits..."; \
+		git push || echo "Already up to date"; \
+	fi
 	eb deploy
 	@echo "Deployment complete! Run 'make logs' to view logs."
 
