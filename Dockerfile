@@ -1,3 +1,10 @@
+FROM node:18-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 WORKDIR /app
@@ -22,6 +29,9 @@ RUN python -c "from playwright.sync_api import sync_playwright; \
 # Copy application code
 COPY backend/ ./backend/
 COPY application.py .
+
+# Copy built frontend from builder stage
+COPY --from=frontend-builder /frontend/dist ./backend/static/
 
 EXPOSE 8000
 
