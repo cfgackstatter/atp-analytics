@@ -1,5 +1,6 @@
 // frontend/src/components/RankingsChart.tsx
 
+import { useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -70,10 +71,10 @@ interface TournamentWin {
 
 // Tournament type to marker size mapping
 const TOURNAMENT_SIZES: Record<string, { radius: number; hoverRadius: number }> = {
-  'fu': { radius: 4, hoverRadius: 6 },      // ITF - smallest
-  'ch': { radius: 5, hoverRadius: 7 },      // Challengers
-  'atp': { radius: 7, hoverRadius: 9 },     // ATP
-  'gs': { radius: 9, hoverRadius: 11 },     // Grand Slam - largest
+  'fu': { radius: 3, hoverRadius: 6 },      // ITF - smallest
+  'ch': { radius: 4, hoverRadius: 7 },      // Challengers
+  'atp': { radius: 5, hoverRadius: 8 },     // ATP
+  'gs': { radius: 6, hoverRadius: 9 },     // Grand Slam - largest
 };
 
 // Tournament type display names
@@ -117,10 +118,24 @@ function findClosestRankingDate(
 }
 
 function RankingsChart({ data, players, playerColors, tournaments, rankingType }: Props) {
+  const [activeRange, setActiveRange] = useState<string>('1Y');
+
+  const ranges: Record<string, () => Date> = {
+    'YTD': () => new Date(new Date().getFullYear(), 0, 1),
+    '1Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 1)),
+    '3Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 3)),
+    '5Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 5)),
+    'All': () => new Date(0),
+  };
+
+  const rangeStart = ranges[activeRange]();
+
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
   const playerMap = Object.fromEntries(players.map(p => [p.player_id, p.player_name]));
 
-  const playerGroups = data.reduce((acc, curr) => {
+  const filteredData = data.filter(d => new Date(d.date) >= rangeStart);
+
+  const playerGroups = filteredData.reduce((acc, curr) => {
     if (!acc[curr.player_id]) acc[curr.player_id] = [];
     acc[curr.player_id].push(curr);
     return acc;
@@ -236,10 +251,13 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
         label: `${playerMap[playerId]} Tournament Wins`,
         data: markers.map(m => ({ x: m.x, y: m.y })),
         borderColor: color,
-        backgroundColor: color,
+        borderWidth: 3,
+        hoverBorderWidth: 3,
+        backgroundColor: 'white',
+        hoverBackgroundColor: 'white',
         pointRadius: sizes.radius,
         pointHoverRadius: sizes.hoverRadius,
-        pointStyle: 'rectRot',
+        pointStyle: 'circle',
         showLine: false,
         playerId,
         tournamentType,
@@ -248,7 +266,7 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
   });
 
   const chartData = {
-    datasets: [...lineDatasets, ...markerDatasets],
+    datasets: [...markerDatasets, ...lineDatasets],
   };
 
   const options = {
@@ -431,6 +449,9 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
         time: {
           unit: 'month' as const,
         },
+        ticks: {
+          maxTicksLimit: 12,
+        },
         title: {
           display: true,
           text: 'Date',
@@ -475,8 +496,28 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
   };
 
   return (
-    <div style={{ height: '450px' }}>
-      <Line data={chartData} options={options} />
+    <div className="flex flex-col gap-2">
+      {/* Range buttons */}
+      <div className="flex gap-1 justify-end">
+        {Object.keys(ranges).map(range => (
+          <button
+            key={range}
+            onClick={() => setActiveRange(range)}
+            className={`px-3 py-1 text-sm rounded ${
+              activeRange === range
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {range}
+          </button>
+        ))}
+      </div>
+
+      {/* Chart */}
+      <div style={{ height: '400px' }}>
+        <Line data={chartData} options={options} />
+      </div>
     </div>
   );
 }
