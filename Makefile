@@ -17,6 +17,8 @@ help:
 	@echo ""
 
 build:
+	@echo "Building frontend..."
+	cd frontend && npm run build && cp -r dist/* ../backend/static/
 	@echo "Building Docker image..."
 	docker build -t $(IMAGE_NAME) . --no-cache
 
@@ -24,8 +26,8 @@ test: build
 	@echo "Starting local test environment..."
 	docker run -p 8000:8000 \
 		-e USE_S3=false \
-		-e ADMIN_PASSWORD=$(PASSWORD) \
-		-v $$(pwd)/data:/app/data \
+		-e "ADMIN_PASSWORD=$(PASSWORD)" \
+		-v "$$(pwd)/data:/app/data" \
 		$(IMAGE_NAME)
 
 deploy:
