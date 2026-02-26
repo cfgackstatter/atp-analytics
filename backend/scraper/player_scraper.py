@@ -4,7 +4,7 @@
 import logging
 import re
 import time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Route, Request
 from bs4 import BeautifulSoup
 
 from backend.scraper.config import PLAYER_OVERVIEW_URL, MAX_RETRIES
@@ -51,126 +51,130 @@ def _parse_plays(text: str) -> tuple[str | None, str | None]:
     return handedness, backhand
 
 
-def scrape_player(
+def _scrape_player_with_page(
+    page,
     player_id: str,
     player_slug: str,
-    max_retries: int = MAX_RETRIES
 ) -> dict:
-    """
-    Scrape player bio data using headless browser.
-    
-    Args:
-        player_id: ATP player ID
-        player_slug: URL slug for player name
-        max_retries: Maximum retry attempts
-    
-    Returns:
-        Dictionary of bio data, empty dict on failure
-    """
+    """Scrape player bio data using an existing Playwright page."""
     url = f"{PLAYER_OVERVIEW_URL}/{player_slug}/{player_id}/overview"
-    
-    for attempt in range(max_retries):
+
+    logger.info(f"Navigating to {url} for player {player_id}")
+    page.goto(url, wait_until="networkidle", timeout=30000)
+    content = page.content()
+    logger.info(f"Page loaded successfully for player {player_id}")
+
+    soup = BeautifulSoup(content, "html.parser")
+    pd_content = soup.find("div", class_="pd_content")
+
+    if not pd_content:
+        logger.warning(f"No bio content found for player {player_id}")
+        return {}
+
+    data: dict[str, object] = {}
+    for li in pd_content.find_all("li"):
+        spans = li.find_all("span", recursive=False)
+        if len(spans) < 2:
+            continue
+
+        label = spans[0].get_text(strip=True)
+        value = spans[1].get_text(strip=True)
+
+        if label in ["Age", "DOB"]:
+            data["birthdate"] = _extract_date(value)
+        elif label == "Weight":
+            data["weight_kg"] = _extract_weight_kg(value)
+        elif label == "Height":
+            data["height_cm"] = _extract_height_cm(value)
+        elif label == "Turned pro":
+            data["turned_pro"] = int(value) if value.isdigit() else None
+        elif label == "Country":
+            data["country"] = value.split("\n")[0].strip() or None
+        elif label == "Birthplace":
+            data["birthplace"] = value or None
+        elif label == "Plays":
+            data["handedness"], data["backhand"] = _parse_plays(value)
+        elif label == "Coach":
+            data["coach"] = value or None
+
+    logger.info(f"Successfully scraped player {player_id}: {data}")
+    return data
+
+
+def scrape_players_batch(players: list[tuple[str, str]], max_retries: int = MAX_RETRIES) -> dict[str, dict]:
+    """
+    Scrape multiple players using a single browser/context.
+
+    Args:
+        players: list of (player_id, player_slug)
+        max_retries: retries per player
+
+    Returns:
+        Mapping player_id -> scraped data dict
+    """
+    results: dict[str, dict] = {}
+
+    with sync_playwright() as p:
+        logger.info(f"Launching shared Chromium browser for {len(players)} players")
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--disable-extensions",
+            ],
+        )
         try:
-            logger.info(f"Attempting to scrape player {player_id} (attempt {attempt + 1}/{max_retries})")
-            
-            with sync_playwright() as p:
-                try:
-                    # Log browser launch attempt
-                    logger.info(f"Launching Chromium browser for player {player_id}")
-                    browser = p.chromium.launch(
-                        headless=True,
-                        args=[
-                            '--no-sandbox',              # Critical for EB/Docker
-                            '--disable-setuid-sandbox',  # Critical for EB/Docker
-                            '--disable-dev-shm-usage',   # Use /tmp instead of /dev/shm
-                            '--disable-gpu',             # Not needed on server
-                            '--disable-software-rasterizer',
-                            '--disable-extensions'
-                        ]
-                    )
-                    logger.info(f"Browser launched successfully for player {player_id}")
-                    
-                except Exception as browser_error:
-                    logger.error(
-                        f"Browser launch failed for player {player_id}: "
-                        f"{type(browser_error).__name__}: {str(browser_error)}"
-                    )
-                    raise
-                
-                try:
-                    page = browser.new_page()
-                    logger.info(f"Navigating to {url}")
-                    page.goto(url, wait_until='networkidle', timeout=30000)
-                    content = page.content()
-                    logger.info(f"Page loaded successfully for player {player_id}")
-                    
-                except Exception as page_error:
-                    logger.error(
-                        f"Page navigation failed for player {player_id}: "
-                        f"{type(page_error).__name__}: {str(page_error)}"
-                    )
-                    raise
-                    
-                finally:
-                    browser.close()
-                
-                soup = BeautifulSoup(content, "html.parser")
-                pd_content = soup.find('div', class_='pd_content')
-                
-                if not pd_content:
-                    logger.warning(f"No bio content found for player {player_id}")
-                    return {}
-                
-                data = {}
-                for li in pd_content.find_all('li'):
-                    spans = li.find_all('span', recursive=False)
-                    if len(spans) < 2:
-                        continue
-                    
-                    label = spans[0].get_text(strip=True)
-                    value = spans[1].get_text(strip=True)
-                    
-                    if label in ['Age', 'DOB']:
-                        data['birthdate'] = _extract_date(value)
-                    elif label == 'Weight':
-                        data['weight_kg'] = _extract_weight_kg(value)
-                    elif label == 'Height':
-                        data['height_cm'] = _extract_height_cm(value)
-                    elif label == 'Turned pro':
-                        data['turned_pro'] = int(value) if value.isdigit() else None
-                    elif label == 'Country':
-                        data['country'] = value.split('\n')[0].strip() or None
-                    elif label == 'Birthplace':
-                        data['birthplace'] = value or None
-                    elif label == 'Plays':
-                        data['handedness'], data['backhand'] = _parse_plays(value)
-                    elif label == 'Coach':
-                        data['coach'] = value or None
-                
-                logger.info(f"Successfully scraped player {player_id}: {data}")
-                return data
-        
-        except PlaywrightTimeoutError:
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Timeout scraping player {player_id}, "
-                    f"retry {attempt + 1}/{max_retries}"
-                )
-                time.sleep(2)
-            else:
-                logger.error(f"Failed to scrape player {player_id} after {max_retries} attempts (timeout)")
-                return {}
-        
-        except Exception as e:
-            logger.error(
-                f"Unexpected error scraping player {player_id}: "
-                f"{type(e).__name__}: {str(e)}",
-                exc_info=True  # This logs the full stack trace
-            )
-            if attempt < max_retries - 1:
-                logger.info(f"Retrying player {player_id} after error...")
-                time.sleep(2)
-            else:
-                return {}
-    
-    return {}
+            context = browser.new_context()
+
+            # Reuse your resource blocking
+            def handle_route(route, request):
+                rtype = request.resource_type
+                if rtype in {"image", "stylesheet", "font", "media"}:
+                    route.abort()
+                else:
+                    route.continue_()
+
+            # For performance, register the route once per context
+            context.route("**/*", handle_route)
+
+            for player_id, player_slug in players:
+                for attempt in range(max_retries):
+                    page = context.new_page()
+                    try:
+                        logger.info(
+                            f"Batch scraping player {player_id} (attempt {attempt + 1}/{max_retries})"
+                        )
+                        data = _scrape_player_with_page(page, player_id, player_slug)
+                        if data:
+                            results[player_id] = data
+                        break  # success, stop retry loop for this player
+                    except PlaywrightTimeoutError:
+                        logger.warning(
+                            f"Timeout scraping player {player_id} in batch, "
+                            f"attempt {attempt + 1}/{max_retries}"
+                        )
+                        if attempt == max_retries - 1:
+                            logger.error(
+                                f"Failed to scrape player {player_id} after {max_retries} attempts (batch)"
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Unexpected error scraping player {player_id} in batch: "
+                            f"{type(e).__name__}: {e}",
+                            exc_info=True,
+                        )
+                        if attempt == max_retries - 1:
+                            logger.error(
+                                f"Giving up on player {player_id} after {max_retries} attempts (batch)"
+                            )
+                    finally:
+                        page.close()
+
+        finally:
+            browser.close()
+
+    return results

@@ -5,7 +5,7 @@ import logging
 import polars as pl
 
 from backend.scraper.ranking_scraper import get_ranking_dates, scrape_ranking
-from backend.scraper.player_scraper import scrape_player
+from backend.scraper.player_scraper import scrape_players_batch
 from backend.scraper.config import BIO_COLUMNS
 from backend.scraper.schemas import RANKINGS_SCHEMA, PLAYERS_SCHEMA
 from backend.scraper.player_utils import generate_player_slug
@@ -166,17 +166,26 @@ def update_player_bio(num_players: int = 10) -> int:
 
     logger.info(f"Scraping {len(to_scrape)} players...")
 
-    # Scrape player data and collect updates
-    updates = []
-    for i, row in enumerate(to_scrape.iter_rows(named=True), 1):
-        logger.info(f"  {i}/{len(to_scrape)}: {row['player_name']}")
-        slug = generate_player_slug(row['player_name'])
-        data = scrape_player(row['player_id'], slug)
+    # Prepare batch list of (player_id, slug)
+    players_to_scrape: list[tuple[str, str]] = []
+    player_name_map: dict[str, str] = {}
 
+    for row in to_scrape.iter_rows(named=True):
+        pid = row["player_id"]
+        name = row["player_name"]
+        slug = generate_player_slug(name)
+        players_to_scrape.append((pid, slug))
+        player_name_map[pid] = name
+
+    # Use shared browser session
+    batch_results = scrape_players_batch(players_to_scrape)
+
+    # Collect updates
+    updates: list[dict] = []
+    for pid, data in batch_results.items():
         if data:
-            # ✅ FIX: Add player_id AND player_name to preserve name
-            data['player_id'] = row['player_id']
-            data['player_name'] = row['player_name']  # ⭐ CRITICAL: Preserve the name!
+            data["player_id"] = pid
+            data["player_name"] = player_name_map.get(pid, pid)
             updates.append(data)
 
     if not updates:
