@@ -629,16 +629,27 @@
                     html += '<h3 style="font-size: 14px; margin: 12px 0 8px; color: #27ae60;">✓ Recent Jobs</h3>';
                     data.completed.slice(0, 10).forEach(job => {
                         const isSuccess = job.status === 'completed';
+
+                        // Human-readable job label by type
+                        let jobLabel = job.type;
+                        if (job.type === 'rankings') {
+                            jobLabel += ` - ${job.ranking_type}`;
+                        } else if (job.type === 'tournaments') {
+                            jobLabel += ` - ${(job.tournament_types || []).join(', ')}`;
+                        } else if (job.type === 'players') {
+                            jobLabel += ` - ${job.players_updated ?? job.num_players} players`;
+                        }
+
                         html += `
                             <div class="job-item ${isSuccess ? 'completed' : 'failed'}">
                                 <div class="job-header">
                                     <span class="status-badge status-${job.status}">${job.status}</span>
-                                    ${job.type} - ${job.ranking_type || job.tournament_types || `${job.players_updated} players`}
+                                    ${jobLabel}
                                 </div>
                                 <div class="job-details">
-                                    ${job.weeks_scraped ? `Weeks: ${job.weeks_scraped}` : ''}
-                                    ${job.tournaments_scraped ? `Tournaments: ${job.tournaments_scraped}` : ''}
-                                    ${job.players_updated ? `Players: ${job.players_updated}` : ''}
+                                    ${job.weeks_scraped !== undefined ? `Weeks: ${job.weeks_scraped}` : ''}
+                                    ${job.tournaments_scraped !== undefined ? `Tournaments: ${job.tournaments_scraped}` : ''}
+                                    ${job.players_updated !== undefined ? `Players: ${job.players_updated}` : ''}
                                     | Completed: ${new Date(job.completed).toLocaleString()}
                                 </div>
                             </div>

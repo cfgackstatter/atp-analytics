@@ -195,7 +195,7 @@ def get_data_summary() -> dict:
         # Count unique countries (use "country" column, not "country_code")
         countries = 0
         if "country" in df.columns:
-            countries = df.select(pl.col("country").n_unique()).item()
+            countries = df.select(pl.col("country").drop_nulls().n_unique()).item()
 
         summary["players"] = {
             "count": len(df),
