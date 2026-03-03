@@ -60,7 +60,10 @@ def _scrape_player_with_page(
     url = f"{PLAYER_OVERVIEW_URL}/{player_slug}/{player_id}/overview"
 
     logger.info(f"Navigating to {url} for player {player_id}")
-    page.goto(url, wait_until="networkidle", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+    page.wait_for_selector("div.pd_content", timeout=15000)
+
     content = page.content()
     logger.info(f"Page loaded successfully for player {player_id}")
 
