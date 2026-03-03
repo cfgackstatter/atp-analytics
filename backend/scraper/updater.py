@@ -87,7 +87,16 @@ def update_rankings(ranking_type: str, max_weeks: int | None = None) -> int:
     new_players = _ensure_schema_columns(new_players, PLAYERS_SCHEMA)
     existing_players = _ensure_schema_columns(existing_players, PLAYERS_SCHEMA)
 
-    combined_players = upsert_data(new_players, existing_players, ["player_id"])
+    existing_ids = set(existing_players["player_id"].to_list())
+    truly_new = new_players.filter(~pl.col("player_id").is_in(existing_ids))
+
+    if len(truly_new) > 0:
+        combined_players = pl.concat([existing_players, truly_new])
+        logger.info(f"Adding {len(truly_new)} new players to players table")
+    else:
+        combined_players = existing_players
+        logger.info("No new players to add")
+
     save_players(combined_players)
 
     logger.info(f"Successfully scraped {len(ranking_frames)} weeks")
