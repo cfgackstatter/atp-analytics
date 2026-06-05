@@ -7,7 +7,7 @@ import polars as pl
 
 from backend.scraper.config import RANKINGS_URLS
 from backend.scraper.schemas import RANKINGS_SCHEMA, PLAYERS_SCHEMA
-from backend.scraper.http_utils import fetch_with_retry
+from backend.scraper.http_utils import fetch_with_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 def get_ranking_dates(ranking_type: str) -> list[str]:
     """Extract all available ranking dates from dropdown."""
     url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000"
-    response = fetch_with_retry(url)
+    html = fetch_with_playwright(url, wait_for_selector="select#dateWeek-filter")
 
-    if response is None:
+    if html is None:
         logger.warning(f"Could not fetch ranking dates for {ranking_type}")
         return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     dropdown = soup.find("select", {"id": "dateWeek-filter"})
 
     if not isinstance(dropdown, Tag):
@@ -69,16 +69,16 @@ def scrape_ranking(ranking_type: str, date: str) -> tuple[pl.DataFrame, pl.DataF
         Tuple of (rankings_df, players_df). Returns empty DataFrames on failure.
     """
     url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000&dateWeek={date}"
-    response = fetch_with_retry(url)
+    html = fetch_with_playwright(url, wait_for_selector="table.desktop-table")
 
-    if response is None:
+    if html is None:
         logger.warning(f"Skipping {date} due to connection issues")
         return (
             pl.DataFrame(schema=RANKINGS_SCHEMA),
             pl.DataFrame(schema=PLAYERS_SCHEMA)
         )
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", class_="desktop-table")
 
     if not isinstance(table, Tag):
