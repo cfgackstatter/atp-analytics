@@ -5,6 +5,7 @@ import logging
 import polars as pl
 
 from backend.scraper.ranking_scraper import get_ranking_dates, scrape_ranking
+from backend.scraper.http_utils import playwright_session
 from backend.scraper.player_scraper import scrape_players_batch
 from backend.scraper.config import BIO_COLUMNS
 from backend.scraper.schemas import RANKINGS_SCHEMA, PLAYERS_SCHEMA
@@ -37,52 +38,48 @@ def update_rankings(ranking_type: str, max_weeks: int | None = None) -> int:
     Returns:
         Number of weeks successfully scraped
     """
-    all_dates = get_ranking_dates(ranking_type)
+    # Single browser session for all ranking fetches — avoids re-launching Chromium
+    with playwright_session() as ctx:
+        all_dates = get_ranking_dates(ranking_type, context=ctx)
 
-    # Get existing dates
-    existing = load_rankings(ranking_type, schema=RANKINGS_SCHEMA)
-    scraped_dates = set(existing["date"].unique())
+        existing = load_rankings(ranking_type, schema=RANKINGS_SCHEMA)
+        scraped_dates = set(existing["date"].unique())
 
-    # Find missing dates
-    missing = sorted([d for d in all_dates if d not in scraped_dates], reverse=True)
+        missing = sorted([d for d in all_dates if d not in scraped_dates], reverse=True)
 
-    if not missing:
-        logger.info(f"No missing {ranking_type} rankings to scrape")
-        return 0
+        if not missing:
+            logger.info(f"No missing {ranking_type} rankings to scrape")
+            return 0
 
-    dates_to_scrape = missing[:max_weeks] if max_weeks else missing
-    logger.info(f"Scraping {len(dates_to_scrape)} weeks for {ranking_type}...")
+        dates_to_scrape = missing[:max_weeks] if max_weeks else missing
+        logger.info(f"Scraping {len(dates_to_scrape)} weeks for {ranking_type}...")
 
-    # Scrape data
-    ranking_frames = []
-    player_frames = []
+        ranking_frames = []
+        player_frames = []
 
-    for i, date in enumerate(dates_to_scrape, 1):
-        logger.info(f"  {i}/{len(dates_to_scrape)}: {date}")
-        rankings_df, players_df = scrape_ranking(ranking_type, date)
+        for i, date in enumerate(dates_to_scrape, 1):
+            logger.info(f"  {i}/{len(dates_to_scrape)}: {date}")
+            rankings_df, players_df = scrape_ranking(ranking_type, date, context=ctx)
 
-        if len(rankings_df) > 0:
-            ranking_frames.append(rankings_df)
-        if len(players_df) > 0:
-            player_frames.append(players_df)
+            if len(rankings_df) > 0:
+                ranking_frames.append(rankings_df)
+            if len(players_df) > 0:
+                player_frames.append(players_df)
 
-    # Check if we got any data
+    # Everything below is unchanged — outside the `with` block
     if not ranking_frames:
         logger.warning("No ranking data was successfully scraped")
         return 0
 
-    # Combine new data
     new_rankings = pl.concat(ranking_frames)
     new_players = (
         pl.concat(player_frames).unique(subset=["player_id"], keep="last")
         if player_frames else pl.DataFrame(schema=PLAYERS_SCHEMA)
     )
 
-    # Save rankings
     combined_rankings = pl.concat([existing, new_rankings])
     save_rankings(combined_rankings, ranking_type)
 
-    # Update players - ensure schemas match
     existing_players = load_players(schema=PLAYERS_SCHEMA)
     new_players = _ensure_schema_columns(new_players, PLAYERS_SCHEMA)
     existing_players = _ensure_schema_columns(existing_players, PLAYERS_SCHEMA)
@@ -98,7 +95,6 @@ def update_rankings(ranking_type: str, max_weeks: int | None = None) -> int:
         logger.info("No new players to add")
 
     save_players(combined_players)
-
     logger.info(f"Successfully scraped {len(ranking_frames)} weeks")
     return len(ranking_frames)
 

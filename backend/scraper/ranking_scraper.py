@@ -2,64 +2,77 @@
 """Scrape ATP rankings data."""
 
 import logging
-from bs4 import BeautifulSoup, Tag
 import polars as pl
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from backend.scraper.config import RANKINGS_URLS
 from backend.scraper.schemas import RANKINGS_SCHEMA, PLAYERS_SCHEMA
-from backend.scraper.http_utils import fetch_with_playwright
+from backend.scraper.http_utils import playwright_session
 
 logger = logging.getLogger(__name__)
 
 
-def get_ranking_dates(ranking_type: str) -> list[str]:
-    """Extract all available ranking dates from dropdown."""
-    url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000"
-    html = fetch_with_playwright(url, wait_for_selector="select#dateWeek-filter")
-
-    if html is None:
-        logger.warning(f"Could not fetch ranking dates for {ranking_type}")
-        return []
-
-    soup = BeautifulSoup(html, "html.parser")
-    dropdown = soup.find("select", {"id": "dateWeek-filter"})
-
-    if not isinstance(dropdown, Tag):
-        logger.warning(f"Dropdown not found for {ranking_type}")
-        return []
-
-    dates = []
-    for option in dropdown.find_all("option"):
-        value = option.get("value")
-        if isinstance(value, str):
-            if value == "Current Week":
-                # Parse the visible text (e.g., "2024.10.28")
-                dates.append(option.text.strip().replace(".", "-"))
-            else:
-                dates.append(value)
-
-    return dates
-
-
-def _extract_int(cell: Tag | None) -> int | None:
-    """Extract integer from cell, handling commas, +/-, and '-'."""
-    if not isinstance(cell, Tag):
+def _parse_int(text: str | None) -> int | None:
+    """Parse integer from scraped text, handling commas, +/-, '-', and 'T' prefix."""
+    if not text:
         return None
-    text = cell.text.strip().replace(",", "")
+    text = text.strip().replace(",", "").replace("T", "")
     if not text or text == "-":
         return None
     return int(text) if text.lstrip("-+").isdigit() else None
 
 
-def _find_cell(row: Tag, class_name: str) -> Tag | None:
-    """Find cell by class substring."""
-    cell = row.find("td", class_=lambda x: bool(x and class_name in x.split()))
-    return cell if isinstance(cell, Tag) else None
+def get_ranking_dates(ranking_type: str, context=None) -> list[str]:
+    """Extract all available ranking dates from dropdown."""
+    url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000"
+
+    def _fetch(ctx):
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="commit", timeout=20000)
+            page.wait_for_selector(
+                "select#dateWeek-filter option", state="attached", timeout=20000
+            )
+            return page.evaluate("""
+                () => Array.from(
+                    document.querySelectorAll("select#dateWeek-filter option")
+                ).map(o => ({ value: o.value, text: o.textContent.trim() }))
+            """)
+        finally:
+            page.close()
+
+    try:
+        if context is not None:
+            options = _fetch(context)
+        else:
+            with playwright_session() as ctx:
+                options = _fetch(ctx)
+    except PlaywrightTimeoutError:
+        logger.warning(f"Timeout fetching ranking dates for {ranking_type}")
+        return []
+    except Exception as e:
+        logger.warning(f"Could not fetch ranking dates for {ranking_type}: {e}")
+        return []
+
+    if not options:
+        logger.warning(f"Dropdown not found for {ranking_type}")
+        return []
+
+    dates = []
+    for opt in options:
+        value = opt.get("value", "")
+        if value == "Current Week":
+            # Text is e.g. "2026.05.25" → "2026-05-25"
+            dates.append(opt.get("text", "").replace(".", "-"))
+        elif value:
+            dates.append(value)
+
+    return dates
 
 
-def scrape_ranking(ranking_type: str, date: str) -> tuple[pl.DataFrame, pl.DataFrame]:
+def scrape_ranking(ranking_type: str, date: str, context=None) -> tuple[pl.DataFrame, pl.DataFrame]:
     """
-    Scrape rankings for specific date.
+    Scrape rankings for a specific date.
 
     Args:
         ranking_type: 'singles' or 'doubles'
@@ -69,79 +82,73 @@ def scrape_ranking(ranking_type: str, date: str) -> tuple[pl.DataFrame, pl.DataF
         Tuple of (rankings_df, players_df). Returns empty DataFrames on failure.
     """
     url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000&dateWeek={date}"
-    html = fetch_with_playwright(url, wait_for_selector="table.desktop-table")
 
-    if html is None:
-        logger.warning(f"Skipping {date} due to connection issues")
-        return (
-            pl.DataFrame(schema=RANKINGS_SCHEMA),
-            pl.DataFrame(schema=PLAYERS_SCHEMA)
-        )
+    def _fetch(ctx):
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="commit", timeout=20000)
+            page.wait_for_selector(
+                "table.desktop-table tbody tr.lower-row", state="attached", timeout=20000
+            )
+            return page.evaluate("""
+                () => Array.from(
+                    document.querySelectorAll("table.desktop-table tbody tr.lower-row")
+                ).map(row => ({
+                    rank:        row.querySelector(".rank")?.textContent.trim(),
+                    player_id:   row.querySelector(".player a")?.href.split("/").slice(-2)[0],
+                    player_name: row.querySelector(".player a span")?.textContent.trim(),
+                    points:      row.querySelector(".points")?.textContent.trim(),
+                    points_move: row.querySelector(".pointsMove")?.textContent.trim(),
+                    tourns:      row.querySelector(".tourns")?.textContent.trim(),
+                    drop:        row.querySelector(".drop")?.textContent.trim(),
+                    best:        row.querySelector(".best")?.textContent.trim(),
+                }))
+            """)
+        finally:
+            page.close()
 
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table", class_="desktop-table")
+    try:
+        if context is not None:
+            rows = _fetch(context)
+        else:
+            with playwright_session() as ctx:
+                rows = _fetch(ctx)
+    except PlaywrightTimeoutError:
+        logger.warning(f"Timeout scraping {ranking_type} rankings for {date}")
+        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
+    except Exception as e:
+        logger.warning(f"Skipping {date} due to error: {e}")
+        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
 
-    if not isinstance(table, Tag):
-        logger.warning(f"No ranking table found for {date}")
-        return (
-            pl.DataFrame(schema=RANKINGS_SCHEMA),
-            pl.DataFrame(schema=PLAYERS_SCHEMA)
-        )
-
-    tbody = table.find("tbody")
-    if not isinstance(tbody, Tag):
-        logger.warning(f"Table body not found for {date}")
-        return (
-            pl.DataFrame(schema=RANKINGS_SCHEMA),
-            pl.DataFrame(schema=PLAYERS_SCHEMA)
-        )
+    if not rows:
+        logger.warning(f"No ranking rows found for {date}")
+        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
 
     rankings_data = []
     players_data = []
 
-    for row in tbody.find_all("tr", class_="lower-row"):
-        # Extract rank
-        rank_cell = _find_cell(row, "rank")
-        rank_text = rank_cell.text.strip().replace("T", "") if rank_cell else ""
-
-        # Extract player info
-        player_cell = _find_cell(row, "player")
-        player_id = None
-        player_name = None
-
-        if player_cell:
-            player_link = player_cell.find("a")
-            if isinstance(player_link, Tag):
-                href = player_link.get("href")
-                if isinstance(href, str):
-                    player_id = href.split("/")[-2]
-                name_span = player_link.find("span")
-                if isinstance(name_span, Tag):
-                    player_name = name_span.text.strip()
+    for row in rows:
+        rank_text = (row.get("rank") or "").replace("T", "")
+        player_id = row.get("player_id") or None
+        player_name = row.get("player_name") or None
 
         rankings_data.append({
-            "rank": int(rank_text) if rank_text.isdigit() else None,
-            "player_id": player_id,
-            "points": _extract_int(_find_cell(row, "points")),
-            "points_move": _extract_int(_find_cell(row, "pointsMove")),
-            "tournaments_played": _extract_int(_find_cell(row, "tourns")),
-            "dropping": _extract_int(_find_cell(row, "drop")),
-            "next_best": _extract_int(_find_cell(row, "best")),
-            "date": date,
-            "type": ranking_type,
+            "rank":                int(rank_text) if rank_text.isdigit() else None,
+            "player_id":           player_id,
+            "points":              _parse_int(row.get("points")),
+            "points_move":         _parse_int(row.get("points_move")),
+            "tournaments_played":  _parse_int(row.get("tourns")),
+            "dropping":            _parse_int(row.get("drop")),
+            "next_best":           _parse_int(row.get("best")),
+            "date":                date,
+            "type":                ranking_type,
         })
 
         if player_id and player_name:
             players_data.append({"player_id": player_id, "player_name": player_name})
 
-    if not rankings_data:
-        logger.warning(f"No ranking data found for {date}")
-        return (
-            pl.DataFrame(schema=RANKINGS_SCHEMA),
-            pl.DataFrame(schema=PLAYERS_SCHEMA)
-        )
-
+    logger.info(f"Scraped {len(rankings_data)} rows for {ranking_type} {date}")
     return (
         pl.DataFrame(rankings_data, schema=RANKINGS_SCHEMA),
-        pl.DataFrame(players_data, schema=PLAYERS_SCHEMA)
+        pl.DataFrame(players_data, schema=PLAYERS_SCHEMA),
     )
