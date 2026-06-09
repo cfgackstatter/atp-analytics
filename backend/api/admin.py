@@ -299,3 +299,25 @@ def get_job_status(job_id: str, password: str = Query(...)):
             return job
 
     raise HTTPException(status_code=404, detail="Job not found")
+
+
+@router.get("/test-playwright")
+def test_playwright(password: str = Query(...)):
+    """Test Playwright works on this server."""
+    verify_password(password)
+    import traceback
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=[
+                "--no-sandbox", "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage", "--disable-gpu",
+                "--single-process", "--no-zygote",
+            ])
+            page = browser.new_page()
+            page.goto("https://example.com", wait_until="commit", timeout=15000)
+            title = page.title()
+            browser.close()
+        return {"status": "ok", "title": title}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "trace": traceback.format_exc()}
