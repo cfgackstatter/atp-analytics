@@ -60,6 +60,8 @@ make logs
 - Scrapes run in a **subprocess** (web process stays responsive); only one scrape at a time (HTTP 409 if busy)
 - Parquet/S3 merges use a file write lock + rankings dedupe on `(player_id, date)`
 - One Playwright browser + reused page per job; shared retries/backoff; heavier resource blocking (helps small EB instances)
+- Next-tier scrape opts: `SCRAPE_CONCURRENCY` (default 2), ranking-date cache (12h), checkpoint every 5 weeks, skip complete past tournament years
+- On tiny EB hosts set `SCRAPE_CONCURRENCY=1` (and optionally `PLAYWRIGHT_SINGLE_PROCESS=true`)
 - CORS off by default (same-origin app); set `CORS_ORIGINS=https://a.com,https://b.com` only if needed
 - `/docs` enabled locally (`ENABLE_DOCS=true`); disabled in prod via `make sync-env`
 

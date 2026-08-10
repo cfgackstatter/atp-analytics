@@ -7,10 +7,16 @@ import logging
 import re
 import time
 
+from playwright.async_api import Page as AsyncPage
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from backend.scraper.config import MAX_RETRIES, PLAYER_OVERVIEW_URL, RETRY_BACKOFF_BASE
-from backend.scraper.http_utils import goto_and_extract, playwright_session
+from backend.scraper.http_utils import (
+    async_goto_and_extract,
+    goto_and_extract,
+    playwright_session,
+)
+from backend.scraper.parallel import parallel_map
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +30,12 @@ _BIO_ITEMS_JS = """
         : null;
 }).filter(Boolean)
 """
+
+BIO_SELECTOR = "div.pd_content"
+
+
+def player_overview_url(player_id: str, player_slug: str) -> str:
+    return f"{PLAYER_OVERVIEW_URL}/{player_slug}/{player_id}/overview"
 
 
 def _extract_date(text: str) -> str | None:
@@ -67,17 +79,7 @@ def _parse_plays(text: str) -> tuple[str | None, str | None]:
     return handedness, backhand
 
 
-def _scrape_player(page: Page, player_id: str, player_slug: str) -> dict:
-    """Scrape one player using an existing Playwright page."""
-    url = f"{PLAYER_OVERVIEW_URL}/{player_slug}/{player_id}/overview"
-    items = goto_and_extract(
-        page,
-        url,
-        selector="div.pd_content",
-        js=_BIO_ITEMS_JS,
-        max_retries=1,  # batch loop owns retries so we can log per player
-    )
-
+def items_to_bio(items: list[dict]) -> dict:
     data: dict = {}
     for item in items or []:
         label, value = item["label"], item["value"]
@@ -97,7 +99,37 @@ def _scrape_player(page: Page, player_id: str, player_slug: str) -> dict:
             data["handedness"], data["backhand"] = _parse_plays(value)
         elif label == "Coach":
             data["coach"] = value or None
+    return data
 
+
+def _scrape_player(page: Page, player_id: str, player_slug: str) -> dict:
+    """Scrape one player using an existing Playwright page."""
+    url = player_overview_url(player_id, player_slug)
+    items = goto_and_extract(
+        page,
+        url,
+        selector=BIO_SELECTOR,
+        js=_BIO_ITEMS_JS,
+        max_retries=1,
+    )
+    data = items_to_bio(items or [])
+    logger.info("Scraped player %s: %s", player_id, data)
+    return data
+
+
+async def async_scrape_player(
+    page: AsyncPage,
+    player_id: str,
+    player_slug: str,
+) -> dict:
+    url = player_overview_url(player_id, player_slug)
+    items = await async_goto_and_extract(
+        page,
+        url,
+        selector=BIO_SELECTOR,
+        js=_BIO_ITEMS_JS,
+    )
+    data = items_to_bio(items or [])
     logger.info("Scraped player %s: %s", player_id, data)
     return data
 
@@ -106,16 +138,21 @@ def scrape_players_batch(
     players: list[tuple[str, str]],
     max_retries: int = MAX_RETRIES,
     context=None,
+    *,
+    parallel: bool = True,
 ) -> dict[str, dict]:
     """
-    Scrape multiple players using a single shared browser page.
+    Scrape multiple players.
 
-    Args:
-        players: list of (player_id, player_slug)
-        context: optional shared BrowserContext (reuses caller's session)
-    Returns:
-        Mapping of player_id -> scraped data dict
+    When ``parallel`` is True (default), uses a small pool of pages.
+    ``context`` is only used for the sequential fallback path.
     """
+    if not players:
+        return {}
+
+    if parallel:
+        return _scrape_players_parallel(players)
+
     results: dict[str, dict] = {}
 
     def _run(ctx) -> dict[str, dict]:
@@ -160,3 +197,22 @@ def scrape_players_batch(
         return _run(context)
     with playwright_session() as ctx:
         return _run(ctx)
+
+
+def _scrape_players_parallel(players: list[tuple[str, str]]) -> dict[str, dict]:
+    async def worker(page, item: tuple[str, str]) -> tuple[str, dict]:
+        player_id, player_slug = item
+        data = await async_scrape_player(page, player_id, player_slug)
+        return player_id, data
+
+    outcomes = parallel_map(players, worker)
+    results: dict[str, dict] = {}
+    for item, outcome in zip(players, outcomes):
+        player_id = item[0]
+        if isinstance(outcome, BaseException):
+            logger.error("Failed to scrape player %s: %s", player_id, outcome)
+            continue
+        pid, data = outcome
+        if data:
+            results[pid] = data
+    return results
