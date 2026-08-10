@@ -31,10 +31,11 @@ help:
 
 sync-env: check-password
 	@echo "Syncing production env from .admin-password.txt ..."
-	@echo "  ADMIN_PASSWORD=<from file>  FORCE_HTTPS=true"
+	@echo "  ADMIN_PASSWORD=<from file>  FORCE_HTTPS=true  ENABLE_DOCS=false"
 	eb setenv \
 		ADMIN_PASSWORD="$(PASSWORD)" \
 		FORCE_HTTPS=true \
+		ENABLE_DOCS=false \
 		USE_S3=true \
 		AWS_REGION=us-east-1
 	@echo "EB environment variables updated."
@@ -42,8 +43,11 @@ sync-env: check-password
 dev: check-password
 	@echo "Starting local dev server (http://localhost:8000)..."
 	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
+	@echo "API docs: http://localhost:8000/docs"
 	ADMIN_PASSWORD=$(PASSWORD) \
 	USE_S3=true \
+	ENABLE_DOCS=true \
+	FORCE_HTTPS=false \
 	uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
 
 build:

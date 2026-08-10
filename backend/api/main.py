@@ -1,56 +1,77 @@
 # backend/api/main.py
 """FastAPI application for ATP Analytics."""
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-import os
-from pathlib import Path
-from typing import Optional, List
-import polars as pl
+from __future__ import annotations
 
-# Import storage functions
-from backend.storage.s3_data_store import (
-    load_players,
-    load_singles_rankings,
-    load_doubles_rankings,
-    load_tournaments
-)
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import polars as pl
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.api.admin import router as admin_router
+from backend.api.errors import http_internal_error
 from backend.api.https_redirect import HTTPSRedirectMiddleware
+from backend.api.settings import cors_origins, docs_enabled
+from backend.storage.s3_data_store import (
+    load_doubles_rankings,
+    load_players,
+    load_singles_rankings,
+    load_tournaments,
+)
+
+logger = logging.getLogger(__name__)
+
+_enable_docs = docs_enabled()
 
 app = FastAPI(
     title="ATP Analytics API",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
+    openapi_url="/openapi.json" if _enable_docs else None,
 )
 
 # Outer middleware runs last-added first; HTTPS redirect should wrap the stack.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_origins = cors_origins()
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
+    )
 app.add_middleware(HTTPSRedirectMiddleware)
 
-# Include admin router
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
-# === API ROUTES ===
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch unexpected errors; never leak internals to clients."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 @app.get("/health")
 def health_check():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "timestamp": "2026-02-10T02:00:00",
-        "storage": os.getenv("USE_S3", "false")
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "storage": os.getenv("USE_S3", "false"),
     }
+
 
 @app.get("/players/search")
 def search_players(q: str = Query(..., min_length=1)):
@@ -61,20 +82,19 @@ def search_players(q: str = Query(..., min_length=1)):
         if players_df is None or len(players_df) == 0:
             return []
 
-        # Filter players by search query
         mask = players_df["player_name"].str.to_lowercase().str.contains(q.lower())
         results = players_df.filter(mask)
-
         return results.to_dicts()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise http_internal_error(logger, e, public_message="Failed to search players") from e
+
 
 @app.get("/rankings/stored")
 def get_stored_rankings(
     ranking_type: str = Query(default="singles", pattern="^(singles|doubles)$"),
     player_ids: Optional[str] = Query(default=None),
-    limit: int = Query(default=1000, le=5000),  # Increased default
-    latest_only: bool = Query(default=False)
+    limit: int = Query(default=1000, le=5000),
+    latest_only: bool = Query(default=False),
 ):
     """Get stored ranking history."""
     try:
@@ -82,40 +102,32 @@ def get_stored_rankings(
             df = load_singles_rankings()
         else:
             df = load_doubles_rankings()
-        
+
         if df is None or len(df) == 0:
             return []
-        
-        # Filter by player IDs if provided
+
         if player_ids:
             player_id_list = [pid.strip() for pid in player_ids.split(",")]
             df = df.filter(df["player_id"].is_in(player_id_list))
-            # When specific players requested, return ALL their data
-            # Don't apply limit - chart needs complete history
             return df.sort("date").to_dicts()
-        
-        # Get only latest ranking per player
+
         if latest_only:
             df = df.sort("date", descending=True).group_by("player_id").head(1)
-            # Sort by rank for leaderboard display
             if "rank" in df.columns:
                 df = df.sort("rank")
         else:
-            # For general queries, sort by date
             df = df.sort("date")
-        
-        # Apply limit only for non-specific queries
+
         df = df.head(limit)
-        
         return df.to_dicts()
-    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise http_internal_error(logger, e, public_message="Failed to load rankings") from e
+
 
 @app.get("/tournaments")
 def get_tournaments(
     year: Optional[int] = None,
-    tournament_type: Optional[str] = None
+    tournament_type: Optional[str] = None,
 ):
     """Get tournament data."""
     try:
@@ -124,7 +136,6 @@ def get_tournaments(
         if df is None or len(df) == 0:
             return []
 
-        # Apply filters
         if year:
             df = df.filter(df["year"] == year)
 
@@ -133,56 +144,55 @@ def get_tournaments(
 
         return df.to_dicts()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        raise http_internal_error(logger, e, public_message="Failed to load tournaments") from e
+
+
 @app.get("/players")
 def get_players(
     country: Optional[str] = None,
     limit: int = Query(default=100, le=500),
-    has_bio: Optional[bool] = None
+    has_bio: Optional[bool] = None,
 ):
     """Get all players with optional filtering."""
     try:
         players_df = load_players()
         if players_df is None or len(players_df) == 0:
             return []
-        
-        # Filter by country
+
         if country:
             mask = players_df["country"].str.to_lowercase().str.contains(country.lower())
             players_df = players_df.filter(mask)
-        
-        # Filter by bio data
+
         if has_bio is not None:
             bio_fields = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
             if has_bio:
-                mask = pl.any_horizontal([
-                    pl.col(field).is_not_null() 
-                    for field in bio_fields 
-                    if field in players_df.columns
-                ])
+                mask = pl.any_horizontal(
+                    [
+                        pl.col(field).is_not_null()
+                        for field in bio_fields
+                        if field in players_df.columns
+                    ]
+                )
             else:
-                mask = pl.all_horizontal([
-                    pl.col(field).is_null() 
-                    for field in bio_fields 
-                    if field in players_df.columns
-                ])
+                mask = pl.all_horizontal(
+                    [
+                        pl.col(field).is_null()
+                        for field in bio_fields
+                        if field in players_df.columns
+                    ]
+                )
             players_df = players_df.filter(mask)
-        
-        # Apply limit
+
         players_df = players_df.head(limit)
-        
         return players_df.to_dicts()
-    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise http_internal_error(logger, e, public_message="Failed to load players") from e
+
 
 # === FRONTEND SERVING ===
 
-# Get static directory path
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
-# Mount static assets (CSS, JS, images)
 if STATIC_DIR.exists():
     assets_dir = STATIC_DIR / "assets"
     if assets_dir.exists():
@@ -191,7 +201,6 @@ if STATIC_DIR.exists():
     @app.get("/favicon.ico")
     @app.head("/favicon.ico")
     def serve_favicon_ico():
-        """Serve favicon.ico."""
         favicon_path = STATIC_DIR / "favicon.ico"
         if favicon_path.exists():
             return FileResponse(favicon_path, media_type="image/x-icon")
@@ -200,7 +209,6 @@ if STATIC_DIR.exists():
     @app.get("/favicon.png")
     @app.head("/favicon.png")
     def serve_favicon_png():
-        """Serve favicon.png."""
         favicon_path = STATIC_DIR / "favicon.png"
         if favicon_path.exists():
             return FileResponse(favicon_path, media_type="image/png")
@@ -209,7 +217,6 @@ if STATIC_DIR.exists():
     @app.get("/logo.png")
     @app.head("/logo.png")
     def serve_logo_png():
-        """Serve logo.png."""
         logo_path = STATIC_DIR / "logo.png"
         if logo_path.exists():
             return FileResponse(logo_path, media_type="image/png")
@@ -218,7 +225,6 @@ if STATIC_DIR.exists():
     @app.get("/logo.svg")
     @app.head("/logo.svg")
     def serve_logo_svg():
-        """Serve logo.svg."""
         logo_path = STATIC_DIR / "logo.svg"
         if logo_path.exists():
             return FileResponse(logo_path, media_type="image/svg+xml")
@@ -227,43 +233,51 @@ if STATIC_DIR.exists():
     @app.get("/vite.svg")
     @app.head("/vite.svg")
     def serve_vite_svg():
-        """Serve vite.svg."""
         svg_path = STATIC_DIR / "vite.svg"
         if svg_path.exists():
             return FileResponse(svg_path)
         raise HTTPException(status_code=404)
 
-# Serve React app at root (MUST BE LAST!)
+
 @app.get("/", include_in_schema=False)
 async def serve_frontend():
     """Serve the React frontend index.html."""
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    # Fallback if frontend not built
-    return {
+    payload = {
         "name": "ATP Analytics API",
         "version": "1.0.0",
-        "docs": "/docs",
-        "message": "Frontend not found. Build frontend and copy to backend/static/"
+        "message": "Frontend not found. Build frontend and copy to backend/static/",
     }
+    if _enable_docs:
+        payload["docs"] = "/docs"
+    return payload
 
-# Catch-all route for React Router (SPA routing)
+
 @app.get("/{full_path:path}", include_in_schema=False)
 async def serve_spa(full_path: str):
-    """
-    Catch-all route for Single Page Application routing.
-    Serves index.html for any non-API routes.
-    """
-    # Don't intercept API routes, docs, or admin
-    if (full_path.startswith("api/") or
-        full_path.startswith("docs") or
-        full_path.startswith("redoc") or
-        full_path.startswith("admin/") or
-        full_path.startswith("health") or
-        full_path.startswith("players/") or
-        full_path.startswith("rankings/") or
-        full_path.startswith("tournaments")):
+    """Catch-all for SPA routes; do not intercept API / docs paths."""
+    # Always reserve these paths so disabled docs cannot fall through to index.html.
+    api_exact = {
+        "health",
+        "tournaments",
+        "players",
+        "docs",
+        "redoc",
+        "openapi.json",
+    }
+    api_prefixes = (
+        "api/",
+        "admin/",
+        "players/",
+        "rankings/",
+        "tournaments/",
+        "docs/",
+        "redoc/",
+    )
+
+    if full_path in api_exact or full_path.startswith(api_prefixes):
         raise HTTPException(status_code=404)
 
     index_path = STATIC_DIR / "index.html"

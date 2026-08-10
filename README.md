@@ -99,7 +99,8 @@ Player scraping uses Playwright (headless browser) and is managed **manually** t
 ### Production Environment
 
 - `make deploy` syncs env vars then deploys code (see `make sync-env`)
-- Env sync sets `ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, and S3 settings
+- Env sync sets `ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, `ENABLE_DOCS=false`, and S3 settings
+- OpenAPI `/docs` is off in production; CORS is same-origin only unless `CORS_ORIGINS` is set
 - Data stored in S3
 
 ## Deployment Architecture

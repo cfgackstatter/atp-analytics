@@ -59,6 +59,8 @@ make logs
 - Rate limit: 60 requests / minute / IP on admin APIs
 - Scrapes run in a **subprocess** (web process stays responsive); only one scrape at a time (HTTP 409 if busy)
 - Parquet/S3 merges use a file write lock + rankings dedupe on `(player_id, date)`
+- CORS off by default (same-origin app); set `CORS_ORIGINS=https://a.com,https://b.com` only if needed
+- `/docs` enabled locally (`ENABLE_DOCS=true`); disabled in prod via `make sync-env`
 
 Example:
 ```bash
