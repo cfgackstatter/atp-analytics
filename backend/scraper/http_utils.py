@@ -147,6 +147,35 @@ def playwright_session(*, single_process: bool | None = None) -> Iterator[Any]:
             browser.close()
 
 
+@contextmanager
+def owned_page(context=None, page: Page | None = None) -> Iterator[Page]:
+    """
+    Yield a page for sync scrapers.
+
+    Prefer an injected ``page``, else a temporary page on ``context``, else a
+    short-lived self-launched session (fallback for scripts/tests only).
+    """
+    if page is not None:
+        yield page
+        return
+
+    if context is not None:
+        owned = context.new_page()
+        try:
+            yield owned
+        finally:
+            owned.close()
+        return
+
+    logger.debug("Scraper self-launching Playwright session (no page/context provided)")
+    with playwright_session() as ctx:
+        owned = ctx.new_page()
+        try:
+            yield owned
+        finally:
+            owned.close()
+
+
 @asynccontextmanager
 async def async_playwright_session(
     *,

@@ -4,19 +4,20 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import polars as pl
 
 from backend.scraper.config import (
     BIO_COLUMNS,
+    PLAYER_SCRAPE_COOLDOWN_DAYS,
     RANKING_CHECKPOINT_WEEKS,
     VALID_TOURNAMENT_TYPES,
 )
 from backend.scraper.http_utils import playwright_session
 from backend.scraper.parallel import parallel_map
 from backend.scraper.player_scraper import scrape_players_batch
-from backend.scraper.player_utils import generate_player_slug
+from backend.scraper.player_utils import slug_for_player
 from backend.scraper.ranking_scraper import async_scrape_ranking, get_ranking_dates
 from backend.scraper.schemas import PLAYERS_SCHEMA, RANKINGS_SCHEMA, TOURNAMENTS_SCHEMA
 from backend.scraper.tournament_scraper import (
@@ -58,6 +59,36 @@ def _chunked(items: list, size: int) -> list[list]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+def _merge_players_from_rankings(
+    existing_players: pl.DataFrame,
+    new_players: pl.DataFrame,
+) -> pl.DataFrame:
+    """Append new players and fill missing slugs from ranking hrefs."""
+    existing_players = _ensure_schema_columns(existing_players, PLAYERS_SCHEMA)
+    new_players = _ensure_schema_columns(new_players, PLAYERS_SCHEMA)
+
+    slug_updates = new_players.select(["player_id", "player_slug"]).filter(
+        pl.col("player_slug").is_not_null()
+    )
+    if len(slug_updates) > 0 and "player_slug" in existing_players.columns:
+        joined = existing_players.join(
+            slug_updates, on="player_id", how="left", suffix="_new"
+        )
+        existing_players = joined.with_columns(
+            pl.coalesce([pl.col("player_slug"), pl.col("player_slug_new")]).alias(
+                "player_slug"
+            )
+        ).drop("player_slug_new")
+
+    existing_ids = set(existing_players["player_id"].to_list())
+    truly_new = new_players.filter(~pl.col("player_id").is_in(existing_ids))
+    if len(truly_new) == 0:
+        return existing_players
+
+    logger.info("Adding %s new players to players table", len(truly_new))
+    return pl.concat([existing_players, truly_new])
+
+
 def _merge_rankings_checkpoint(
     ranking_type: str,
     ranking_frames: list[pl.DataFrame],
@@ -83,19 +114,9 @@ def _merge_rankings_checkpoint(
         )
         save_rankings(combined_rankings, ranking_type)
 
-        existing_players = _ensure_schema_columns(
-            load_players(schema=PLAYERS_SCHEMA),
-            PLAYERS_SCHEMA,
-        )
-        existing_ids = set(existing_players["player_id"].to_list())
-        truly_new = new_players.filter(~pl.col("player_id").is_in(existing_ids))
-
-        if len(truly_new) > 0:
-            combined_players = pl.concat([existing_players, truly_new])
-            logger.info("Adding %s new players to players table", len(truly_new))
-            save_players(combined_players)
-        else:
-            logger.info("No new players to add in this checkpoint")
+        existing_players = load_players(schema=PLAYERS_SCHEMA)
+        combined_players = _merge_players_from_rankings(existing_players, new_players)
+        save_players(combined_players)
 
     logger.info("Checkpoint saved: %s ranking weeks for %s", weeks, ranking_type)
     return int(weeks)
@@ -266,33 +287,56 @@ def _apply_bio_updates(
     players_df: pl.DataFrame,
     updates: list[dict],
 ) -> pl.DataFrame:
-    """Fill only NULL bio fields from scraped updates (never overwrite existing)."""
-    for update_data in updates:
-        player_id = update_data["player_id"]
-        for col in BIO_COLUMNS:
-            if col not in update_data:
-                continue
-            new_val = update_data.get(col)
-            if new_val is None:
-                continue
-            players_df = players_df.with_columns(
-                pl.when(
-                    (pl.col("player_id") == player_id) & pl.col(col).is_null()
-                )
-                .then(pl.lit(new_val))
-                .otherwise(pl.col(col))
-                .alias(col)
-            )
-    return players_df
+    """
+    Fill only NULL bio fields from scraped updates (never overwrite existing).
+
+    Always updates ``scrape_attempted_at`` (and slug when provided).
+    """
+    if not updates:
+        return players_df
+
+    players_df = _ensure_schema_columns(players_df, PLAYERS_SCHEMA)
+    updates_df = _ensure_schema_columns(pl.DataFrame(updates), PLAYERS_SCHEMA)
+    update_cols = ["player_id", *BIO_COLUMNS, "player_slug", "scrape_attempted_at"]
+    updates_df = updates_df.select([c for c in update_cols if c in updates_df.columns])
+
+    joined = players_df.join(updates_df, on="player_id", how="left", suffix="_new")
+
+    coalesced: list[pl.Expr] = []
+    drop_cols: list[str] = []
+    for col in BIO_COLUMNS + ["player_slug"]:
+        new_col = f"{col}_new"
+        if new_col in joined.columns:
+            coalesced.append(pl.coalesce([pl.col(col), pl.col(new_col)]).alias(col))
+            drop_cols.append(new_col)
+
+    if "scrape_attempted_at_new" in joined.columns:
+        # Prefer the new attempt timestamp when present.
+        coalesced.append(
+            pl.coalesce(
+                [pl.col("scrape_attempted_at_new"), pl.col("scrape_attempted_at")]
+            ).alias("scrape_attempted_at")
+        )
+        drop_cols.append("scrape_attempted_at_new")
+
+    if coalesced:
+        joined = joined.with_columns(coalesced)
+    if drop_cols:
+        joined = joined.drop(drop_cols)
+
+    return _ensure_schema_columns(joined, PLAYERS_SCHEMA)
 
 
 def update_player_bio(num_players: int = 10) -> int:
     """
     Scrape biographical data for players missing info.
 
-    Returns number of players successfully scraped.
+    Skips players attempted within PLAYER_SCRAPE_COOLDOWN_DAYS (including
+    empty/failed pages). Prefers ATP slugs stored from ranking hrefs.
     """
-    players_df = load_players(schema=PLAYERS_SCHEMA)
+    players_df = _ensure_schema_columns(
+        load_players(schema=PLAYERS_SCHEMA), PLAYERS_SCHEMA
+    )
     singles_df = load_rankings("singles", schema=RANKINGS_SCHEMA)
     doubles_df = load_rankings("doubles", schema=RANKINGS_SCHEMA)
 
@@ -353,6 +397,15 @@ def update_player_bio(num_players: int = 10) -> int:
     conditions = [pl.col(col).is_null() for col in bio_check_cols]
     missing = enriched.filter(pl.any_horizontal(conditions)) if conditions else enriched
 
+    if PLAYER_SCRAPE_COOLDOWN_DAYS > 0:
+        cutoff = (
+            datetime.now() - timedelta(days=PLAYER_SCRAPE_COOLDOWN_DAYS)
+        ).isoformat()
+        missing = missing.filter(
+            pl.col("scrape_attempted_at").is_null()
+            | (pl.col("scrape_attempted_at") < cutoff)
+        )
+
     to_scrape = missing.sort(
         ["best_rank", "best_rank_date"],
         descending=[False, True],
@@ -370,20 +423,28 @@ def update_player_bio(num_players: int = 10) -> int:
     for row in to_scrape.iter_rows(named=True):
         pid = row["player_id"]
         name = row["player_name"]
-        players_to_scrape.append((pid, generate_player_slug(name)))
+        slug = slug_for_player(name, stored_slug=row.get("player_slug"))
+        players_to_scrape.append((pid, slug))
         player_name_map[pid] = name
 
-    batch_results = scrape_players_batch(players_to_scrape, parallel=True)
+    outcomes = scrape_players_batch(players_to_scrape, parallel=True)
+    attempted_at = datetime.now().isoformat()
 
     updates: list[dict] = []
-    for pid, data in batch_results.items():
-        if data:
-            data["player_id"] = pid
-            data["player_name"] = player_name_map.get(pid, pid)
-            updates.append(data)
+    ok_count = 0
+    for outcome in outcomes:
+        row = {
+            "player_id": outcome.player_id,
+            "player_name": player_name_map.get(outcome.player_id, outcome.player_id),
+            "scrape_attempted_at": attempted_at,
+            **outcome.data,
+        }
+        updates.append(row)
+        if outcome.status == "ok":
+            ok_count += 1
 
     if not updates:
-        logger.warning("No player data was successfully scraped")
+        logger.warning("No player scrape outcomes to record")
         return 0
 
     with data_write_lock():
@@ -392,5 +453,9 @@ def update_player_bio(num_players: int = 10) -> int:
         players_df = _apply_bio_updates(players_df, updates)
         save_players(players_df)
 
-    logger.info("Successfully updated %s players", len(updates))
-    return len(updates)
+    logger.info(
+        "Player bio scrape done: %s ok, %s empty/failed (all attempts recorded)",
+        ok_count,
+        len(updates) - ok_count,
+    )
+    return ok_count

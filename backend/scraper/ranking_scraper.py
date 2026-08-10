@@ -7,16 +7,19 @@ import logging
 
 import polars as pl
 from playwright.async_api import Page as AsyncPage
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Page
 
 from backend.scraper.config import RANKINGS_URLS
 from backend.scraper.date_cache import load_ranking_dates, save_ranking_dates
 from backend.scraper.http_utils import (
     async_goto_and_extract,
     goto_and_extract,
-    playwright_session,
+    owned_page,
 )
+from backend.scraper.parse_utils import parse_int
+from backend.scraper.player_utils import extract_player_id, extract_player_slug
 from backend.scraper.schemas import PLAYERS_SCHEMA, RANKINGS_SCHEMA
+from backend.scraper.soft_fail import soft_fail
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ _ROWS_JS = """
     document.querySelectorAll("table.desktop-table tbody tr.lower-row")
 ).map(row => ({
     rank:        row.querySelector(".rank")?.textContent.trim(),
-    player_id:   row.querySelector(".player a")?.href.split("/").slice(-2)[0],
+    player_href: row.querySelector(".player a")?.href || null,
     player_name: row.querySelector(".player a span")?.textContent.trim(),
     points:      row.querySelector(".points")?.textContent.trim(),
     points_move: row.querySelector(".pointsMove")?.textContent.trim(),
@@ -48,14 +51,8 @@ def ranking_page_url(ranking_type: str, date: str) -> str:
     return f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000&dateWeek={date}"
 
 
-def _parse_int(text: str | None) -> int | None:
-    """Parse integer from scraped text, handling commas, +/-, '-', and 'T' prefix."""
-    if not text:
-        return None
-    text = text.strip().replace(",", "").replace("T", "")
-    if not text or text == "-":
-        return None
-    return int(text) if text.lstrip("-+").isdigit() else None
+def _empty_frames() -> tuple[pl.DataFrame, pl.DataFrame]:
+    return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
 
 
 def _options_to_dates(options: list[dict]) -> list[str]:
@@ -76,51 +73,43 @@ def rows_to_dataframes(
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Convert evaluated ranking rows into rankings + players DataFrames."""
     if not rows:
-        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
+        return _empty_frames()
 
     rankings_data = []
     players_data = []
     for row in rows:
         rank_text = (row.get("rank") or "").replace("T", "")
-        player_id = row.get("player_id") or None
+        href = row.get("player_href")
+        player_id = extract_player_id(href)
         player_name = row.get("player_name") or None
+        player_slug = extract_player_slug(href)
+
         rankings_data.append(
             {
                 "rank": int(rank_text) if rank_text.isdigit() else None,
                 "player_id": player_id,
-                "points": _parse_int(row.get("points")),
-                "points_move": _parse_int(row.get("points_move")),
-                "tournaments_played": _parse_int(row.get("tourns")),
-                "dropping": _parse_int(row.get("drop")),
-                "next_best": _parse_int(row.get("best")),
+                "points": parse_int(row.get("points")),
+                "points_move": parse_int(row.get("points_move")),
+                "tournaments_played": parse_int(row.get("tourns")),
+                "dropping": parse_int(row.get("drop")),
+                "next_best": parse_int(row.get("best")),
                 "date": date,
                 "type": ranking_type,
             }
         )
         if player_id and player_name:
-            players_data.append({"player_id": player_id, "player_name": player_name})
+            players_data.append(
+                {
+                    "player_id": player_id,
+                    "player_name": player_name,
+                    "player_slug": player_slug,
+                }
+            )
 
     return (
         pl.DataFrame(rankings_data, schema=RANKINGS_SCHEMA),
         pl.DataFrame(players_data, schema=PLAYERS_SCHEMA),
     )
-
-
-def _with_page(page: Page | None, context, fn):
-    if page is not None:
-        return fn(page)
-    if context is not None:
-        owned = context.new_page()
-        try:
-            return fn(owned)
-        finally:
-            owned.close()
-    with playwright_session() as ctx:
-        owned = ctx.new_page()
-        try:
-            return fn(owned)
-        finally:
-            owned.close()
 
 
 def get_ranking_dates(
@@ -138,22 +127,16 @@ def get_ranking_dates(
 
     url = f"{RANKINGS_URLS[ranking_type]}?rankRange=0-5000"
 
-    def _fetch(p: Page):
-        return goto_and_extract(
-            p,
-            url,
-            selector="select#dateWeek-filter option",
-            js=_DATES_JS,
-        )
-
     try:
-        options = _with_page(page, context, _fetch)
-    except PlaywrightTimeoutError:
-        logger.warning("Timeout fetching ranking dates for %s", ranking_type)
-        return []
-    except Exception as e:
-        logger.warning("Could not fetch ranking dates for %s: %s", ranking_type, e)
-        return []
+        with owned_page(context, page) as p:
+            options = goto_and_extract(
+                p,
+                url,
+                selector="select#dateWeek-filter option",
+                js=_DATES_JS,
+            )
+    except Exception as exc:
+        return soft_fail(logger, f"ranking dates for {ranking_type}", exc, list)
 
     if not options:
         logger.warning("Dropdown not found for %s", ranking_type)
@@ -171,25 +154,24 @@ def scrape_ranking(
     context=None,
     page: Page | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Scrape rankings for a specific date. Returns empty DataFrames on failure."""
+    """Scrape rankings for a specific date. Soft-fails to empty frames."""
     url = ranking_page_url(ranking_type, date)
 
-    def _fetch(p: Page):
-        return goto_and_extract(
-            p,
-            url,
-            selector=RANKINGS_ROW_SELECTOR,
-            js=_ROWS_JS,
-        )
-
     try:
-        rows = _with_page(page, context, _fetch)
-    except PlaywrightTimeoutError:
-        logger.warning("Timeout scraping %s rankings for %s", ranking_type, date)
-        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
-    except Exception as e:
-        logger.warning("Skipping %s due to error: %s", date, e)
-        return pl.DataFrame(schema=RANKINGS_SCHEMA), pl.DataFrame(schema=PLAYERS_SCHEMA)
+        with owned_page(context, page) as p:
+            rows = goto_and_extract(
+                p,
+                url,
+                selector=RANKINGS_ROW_SELECTOR,
+                js=_ROWS_JS,
+            )
+    except Exception as exc:
+        return soft_fail(
+            logger,
+            f"{ranking_type} rankings for {date}",
+            exc,
+            _empty_frames,
+        )
 
     rankings_df, players_df = rows_to_dataframes(rows or [], ranking_type, date)
     if len(rankings_df) == 0:
@@ -204,14 +186,23 @@ async def async_scrape_ranking(
     ranking_type: str,
     date: str,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Async ranking scrape for a single week on an existing page."""
+    """Async ranking scrape for a single week; soft-fails to empty frames."""
     url = ranking_page_url(ranking_type, date)
-    rows = await async_goto_and_extract(
-        page,
-        url,
-        selector=RANKINGS_ROW_SELECTOR,
-        js=_ROWS_JS,
-    )
+    try:
+        rows = await async_goto_and_extract(
+            page,
+            url,
+            selector=RANKINGS_ROW_SELECTOR,
+            js=_ROWS_JS,
+        )
+    except Exception as exc:
+        return soft_fail(
+            logger,
+            f"{ranking_type} rankings for {date}",
+            exc,
+            _empty_frames,
+        )
+
     rankings_df, players_df = rows_to_dataframes(rows or [], ranking_type, date)
     if len(rankings_df) == 0:
         logger.warning("No ranking rows found for %s", date)

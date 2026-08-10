@@ -62,6 +62,9 @@ make logs
 - One Playwright browser + reused page per job; shared retries/backoff; heavier resource blocking (helps small EB instances)
 - Next-tier scrape opts: `SCRAPE_CONCURRENCY` (default 2), ranking-date cache (12h), checkpoint every 5 weeks, skip complete past tournament years
 - On tiny EB hosts set `SCRAPE_CONCURRENCY=1` (and optionally `PLAYWRIGHT_SINGLE_PROCESS=true`)
+- Scrapers soft-fail after retries; player bio attempts recorded (`scrape_attempted_at`) with cooldown
+- Prefer ATP `player_slug` from ranking hrefs (Unicode-folded name slug as fallback)
+- Scraper unit tests: `pytest tests/scraper`
 - CORS off by default (same-origin app); set `CORS_ORIGINS=https://a.com,https://b.com` only if needed
 - `/docs` enabled locally (`ENABLE_DOCS=true`); disabled in prod via `make sync-env`
 

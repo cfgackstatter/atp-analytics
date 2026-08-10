@@ -20,6 +20,12 @@ RANKING_DATE_CACHE_TTL_HOURS = float(os.getenv("RANKING_DATE_CACHE_TTL_HOURS", "
 # Merge/save rankings to storage after this many successful week scrapes.
 RANKING_CHECKPOINT_WEEKS = max(1, int(os.getenv("RANKING_CHECKPOINT_WEEKS", "5")))
 
+# Don't re-queue player bio scrapes for this many days after an attempt
+# (including empty/failed pages), so broken slugs aren't hammered forever.
+PLAYER_SCRAPE_COOLDOWN_DAYS = max(
+    0, int(os.getenv("PLAYER_SCRAPE_COOLDOWN_DAYS", "7"))
+)
+
 # --single-process helps tiny hosts but breaks multi-page concurrency.
 # Default: on when concurrency is 1, off when concurrency > 1. Override with env.
 _SINGLE_PROCESS_ENV = os.getenv("PLAYWRIGHT_SINGLE_PROCESS", "").strip().lower()

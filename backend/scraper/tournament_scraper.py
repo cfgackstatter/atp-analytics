@@ -9,16 +9,17 @@ from datetime import datetime
 
 import polars as pl
 from playwright.async_api import Page as AsyncPage
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Page
 
 from backend.scraper.config import MONTH_MAP, RESULTS_ARCHIVE_URL, VALID_TOURNAMENT_TYPES
 from backend.scraper.http_utils import (
     async_goto_and_extract,
     goto_and_extract,
-    playwright_session,
+    owned_page,
 )
 from backend.scraper.player_utils import extract_player_id
 from backend.scraper.schemas import TOURNAMENTS_SCHEMA
+from backend.scraper.soft_fail import soft_fail
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ def scrape_tournaments(
     context=None,
     page: Page | None = None,
 ) -> pl.DataFrame:
-    """Scrape tournaments for a specific year and type using Playwright."""
+    """Scrape tournaments for a specific year and type. Soft-fails to empty."""
     if tournament_type not in VALID_TOURNAMENT_TYPES:
         raise ValueError(
             f"Invalid tournament type: {tournament_type}. "
@@ -160,36 +161,21 @@ def scrape_tournaments(
 
     url = tournament_archive_url(year, tournament_type)
 
-    def _fetch(p: Page):
-        return goto_and_extract(
-            p,
-            url,
-            selector=EVENTS_SELECTOR,
-            js=_EVENTS_JS,
-        )
-
     try:
-        if page is not None:
-            rows = _fetch(page)
-        elif context is not None:
-            owned = context.new_page()
-            try:
-                rows = _fetch(owned)
-            finally:
-                owned.close()
-        else:
-            with playwright_session() as ctx:
-                owned = ctx.new_page()
-                try:
-                    rows = _fetch(owned)
-                finally:
-                    owned.close()
-    except PlaywrightTimeoutError:
-        logger.warning("Timeout scraping %s %s", tournament_type, year)
-        return pl.DataFrame(schema=TOURNAMENTS_SCHEMA)
-    except Exception as e:
-        logger.warning("Skipping %s %s: %s", tournament_type, year, e)
-        return pl.DataFrame(schema=TOURNAMENTS_SCHEMA)
+        with owned_page(context, page) as p:
+            rows = goto_and_extract(
+                p,
+                url,
+                selector=EVENTS_SELECTOR,
+                js=_EVENTS_JS,
+            )
+    except Exception as exc:
+        return soft_fail(
+            logger,
+            f"tournaments {tournament_type} {year}",
+            exc,
+            lambda: pl.DataFrame(schema=TOURNAMENTS_SCHEMA),
+        )
 
     df = rows_to_dataframe(rows or [], year, tournament_type)
     logger.info("Scraped %s tournaments for %s %s", len(df), tournament_type, year)
@@ -201,14 +187,23 @@ async def async_scrape_tournaments(
     year: int,
     tournament_type: str,
 ) -> pl.DataFrame:
-    """Async tournament scrape for one year/type on an existing page."""
+    """Async tournament scrape; soft-fails to empty."""
     url = tournament_archive_url(year, tournament_type)
-    rows = await async_goto_and_extract(
-        page,
-        url,
-        selector=EVENTS_SELECTOR,
-        js=_EVENTS_JS,
-    )
+    try:
+        rows = await async_goto_and_extract(
+            page,
+            url,
+            selector=EVENTS_SELECTOR,
+            js=_EVENTS_JS,
+        )
+    except Exception as exc:
+        return soft_fail(
+            logger,
+            f"tournaments {tournament_type} {year}",
+            exc,
+            lambda: pl.DataFrame(schema=TOURNAMENTS_SCHEMA),
+        )
+
     df = rows_to_dataframe(rows or [], year, tournament_type)
     logger.info("Scraped %s tournaments for %s %s", len(df), tournament_type, year)
     return df

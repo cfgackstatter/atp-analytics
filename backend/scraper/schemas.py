@@ -16,10 +16,11 @@ RANKINGS_SCHEMA = {
     "type": pl.String,
 }
 
-# Players Schema (including bio fields)
+# Players Schema (including bio fields + scrape bookkeeping)
 PLAYERS_SCHEMA = {
     "player_id": pl.String,
     "player_name": pl.String,
+    "player_slug": pl.String,
     "birthdate": pl.String,
     "weight_kg": pl.Int64,
     "height_cm": pl.Int64,
@@ -29,6 +30,8 @@ PLAYERS_SCHEMA = {
     "handedness": pl.String,
     "backhand": pl.String,
     "coach": pl.String,
+    # ISO timestamp of last bio scrape attempt (success, empty, or failed)
+    "scrape_attempted_at": pl.String,
 }
 
 # Tournaments Schema
