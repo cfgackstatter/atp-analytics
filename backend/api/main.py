@@ -18,8 +18,8 @@ from backend.storage.s3_data_store import (
     load_tournaments
 )
 
-# Import admin router
 from backend.api.admin import router as admin_router
+from backend.api.https_redirect import HTTPSRedirectMiddleware
 
 app = FastAPI(
     title="ATP Analytics API",
@@ -28,7 +28,7 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware
+# Outer middleware runs last-added first; HTTPS redirect should wrap the stack.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,6 +36,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(HTTPSRedirectMiddleware)
 
 # Include admin router
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
@@ -176,38 +177,6 @@ def get_players(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# === TASK ENDPOINTS ===
-
-@app.post("/tasks/update-weekly")
-def update_weekly():
-    """Weekly data update task (called by EventBridge)."""
-    from backend.scraper.updater import update_rankings, update_player_bio
-
-    try:
-        # Run updates
-        singles_weeks = update_rankings("singles", max_weeks=2)
-        doubles_weeks = update_rankings("doubles", max_weeks=2)
-        players_updated = update_player_bio(num_players=10)
-
-        result = {
-            "singles_weeks": singles_weeks,
-            "doubles_weeks": doubles_weeks,
-            "players_updated": players_updated
-        }
-
-        return {
-            "status": "success",
-            "message": "Weekly update completed",
-            "timestamp": "2026-02-10T02:00:00",
-            **result
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": "2026-02-10T02:00:00"
-        }
-
 # === FRONTEND SERVING ===
 
 # Get static directory path
@@ -287,11 +256,10 @@ async def serve_spa(full_path: str):
     Serves index.html for any non-API routes.
     """
     # Don't intercept API routes, docs, or admin
-    if (full_path.startswith("api/") or 
-        full_path.startswith("docs") or 
+    if (full_path.startswith("api/") or
+        full_path.startswith("docs") or
         full_path.startswith("redoc") or
         full_path.startswith("admin/") or
-        full_path.startswith("tasks/") or
         full_path.startswith("health") or
         full_path.startswith("players/") or
         full_path.startswith("rankings/") or

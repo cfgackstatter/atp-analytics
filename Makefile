@@ -1,8 +1,15 @@
-.PHONY: help build dev test deploy logs ssh clean status
+.PHONY: help build dev test deploy sync-env logs ssh clean status check-password
 
 # Variables
 IMAGE_NAME := atp-analytics
-PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null || echo "changeme123")
+PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null)
+
+check-password:
+	@if [ -z "$(PASSWORD)" ]; then \
+		echo "Error: .admin-password.txt is missing or empty."; \
+		echo "Create it with a strong secret, then: make sync-env"; \
+		exit 1; \
+	fi
 
 help:
 	@echo "ATP Analytics Development Commands"
@@ -10,14 +17,29 @@ help:
 	@echo "  make dev         - Run locally with uvicorn + S3 (fast, no Docker)"
 	@echo "  make build       - Build Docker image (no cache)"
 	@echo "  make test        - Run locally in Docker with local data"
-	@echo "  make deploy      - Deploy to AWS Elastic Beanstalk"
+	@echo "  make sync-env    - Push ADMIN_PASSWORD + FORCE_HTTPS to EB (no code deploy)"
+	@echo "  make deploy      - sync-env, then commit/push/deploy code to EB"
 	@echo "  make logs        - Stream EB logs"
 	@echo "  make ssh         - SSH into EB instance"
 	@echo "  make clean       - Remove local Docker images"
 	@echo "  make status      - Show EB status and env vars"
 	@echo ""
+	@echo "Admin password: required via .admin-password.txt (no default)."
+	@echo "Auth: Authorization Bearer token (not query string)."
+	@echo "Manual updates only: use /admin/dashboard (no scheduled tasks)."
+	@echo ""
 
-dev:
+sync-env: check-password
+	@echo "Syncing production env from .admin-password.txt ..."
+	@echo "  ADMIN_PASSWORD=<from file>  FORCE_HTTPS=true"
+	eb setenv \
+		ADMIN_PASSWORD="$(PASSWORD)" \
+		FORCE_HTTPS=true \
+		USE_S3=true \
+		AWS_REGION=us-east-1
+	@echo "EB environment variables updated."
+
+dev: check-password
 	@echo "Starting local dev server (http://localhost:8000)..."
 	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
 	ADMIN_PASSWORD=$(PASSWORD) \
@@ -30,7 +52,7 @@ build:
 	@echo "Building Docker image..."
 	docker build -t $(IMAGE_NAME) . --no-cache
 
-test: build
+test: check-password build
 	@echo "Starting Docker test environment (http://localhost:8000)..."
 	docker run -p 8000:8000 \
 		-e USE_S3=false \
@@ -38,8 +60,8 @@ test: build
 		-v "$$(pwd)/data:/app/data" \
 		$(IMAGE_NAME)
 
-deploy:
-	@echo "Deploying to Elastic Beanstalk..."
+deploy: sync-env
+	@echo "Deploying code to Elastic Beanstalk..."
 	@if [ -n "$$(git status --porcelain)" ]; then \
 		git add -A; \
 		read -p "Commit message: " msg; \

@@ -78,7 +78,7 @@ atp-analytics/
 
 ## Data Scraping
 
-Player scraping uses Playwright (headless browser) and is managed through the admin interface at `/admin`.
+Player scraping uses Playwright (headless browser) and is managed **manually** through the admin interface at `/admin/dashboard`. There is no scheduled/weekly update endpoint.
 
 ### Admin Features:
 
@@ -91,15 +91,16 @@ Player scraping uses Playwright (headless browser) and is managed through the ad
 
 ### Local Environment
 
-- Password stored in `.admin-password.txt` (gitignored)
+- **Required** password in `.admin-password.txt` (gitignored) — no default
+- Makefile refuses to start `dev`/`test` if the file is missing
+- Admin APIs use `Authorization: Bearer <password>` (never query-string)
 - Data stored in `./data/` directory
-- Set via Makefile for local testing
 
 ### Production Environment
 
-- Password set once: `eb setenv ADMIN_PASSWORD=$(cat .admin-password.txt)`
+- `make deploy` syncs env vars then deploys code (see `make sync-env`)
+- Env sync sets `ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, and S3 settings
 - Data stored in S3
-- Environment variables managed via EB console
 
 ## Deployment Architecture
 
@@ -125,8 +126,9 @@ Player scraping uses Playwright (headless browser) and is managed through the ad
 
 ### Password not working:
 
-- Local: Check `.admin-password.txt` exists
-- Production: Verify set with `eb printenv`
+- Local: Check `.admin-password.txt` exists and is non-empty (`make check-password`)
+- Production: Verify `ADMIN_PASSWORD` is set with `eb printenv` / `make status`
+- If unset, admin APIs return 503 (fail closed — no fallback password)
 
 ### Docker build fails:
 

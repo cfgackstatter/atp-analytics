@@ -50,14 +50,32 @@ make logs
 - `data/` - Local Parquet files
 - `.env` - Not needed with Makefile
 
+## Admin password
+
+- Local source of truth: `.admin-password.txt` (required, no default)
+- `make dev` / `make test` fail if the file is missing
+- Data updates are **manual only** via `/admin/dashboard` (no weekly/EventBridge task)
+- Auth: `Authorization: Bearer <password>` on `/admin/*` API routes (dashboard HTML is public)
+- Rate limit: 60 requests / minute / IP on admin APIs
+
+Example:
+```bash
+curl -H "Authorization: Bearer $(cat .admin-password.txt)" \
+  http://localhost:8000/admin/data-summary
+```
+
 ## Production Environment Variables
 
-Set once via:
-```bash
-eb setenv ADMIN_PASSWORD=$(cat ./.admin-password.txt)
-eb setenv USE_S3=true
-eb setenv AWS_REGION=us-east-1
-```
+Two different things:
+
+| Command | What it does |
+|---------|----------------|
+| `make sync-env` | Pushes env vars only (`ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, S3 settings). No new code. |
+| `make deploy` | Runs `sync-env`, then commits/pushes (if needed) and `eb deploy` (new code). |
+
+Usual path after local changes: just `make deploy`.
+
+Password-only change (no code): edit `.admin-password.txt`, then `make sync-env`.
 
 Verify with:
 ```bash
@@ -80,8 +98,9 @@ make status
 
 ### Password issues:
 
-- Local: Check `.admin-password.txt` exists
-- Production: Run `make status` to verify env vars
+- Local: `make check-password` / ensure `.admin-password.txt` is non-empty
+- Production: Run `make status` to verify `ADMIN_PASSWORD` is set
+- Unset password → admin APIs return 503 (no `changeme123` fallback)
 
 ## Reference
 

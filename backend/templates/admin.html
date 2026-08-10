@@ -377,7 +377,6 @@
         const API_BASE = window.location.origin;
         let autoRefreshInterval;
 
-        // Get password
         function getPassword() {
             const pwd = document.getElementById('password').value;
             if (!pwd) {
@@ -387,50 +386,63 @@
             return pwd;
         }
 
-        // Update password status
+        function errorDetail(data) {
+            if (!data || data.detail === undefined) return 'Unknown error';
+            return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        }
+
+        /** Admin API helper: password goes in Authorization, never in the URL. */
+        async function adminFetch(path, options = {}) {
+            const password = getPassword();
+            if (!password) return null;
+
+            const headers = new Headers(options.headers || {});
+            headers.set('Authorization', `Bearer ${password}`);
+            if (!headers.has('Accept')) {
+                headers.set('Accept', 'application/json');
+            }
+
+            const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = null;
+            }
+            return { response, data };
+        }
+
         document.getElementById('password').addEventListener('input', (e) => {
             const status = document.getElementById('passwordStatus');
-            if (e.target.value) {
-                status.textContent = '✓ Password set';
-            } else {
-                status.textContent = '';
-            }
+            status.textContent = e.target.value ? 'Ready (sent as Bearer token)' : '';
         });
 
-        // Update Rankings
         async function updateRankings() {
-            const password = getPassword();
-            if (!password) return;
-
             const rankingType = document.getElementById('rankingType').value;
             const maxWeeks = document.getElementById('maxWeeks').value;
+            const params = new URLSearchParams({
+                ranking_type: rankingType,
+                max_weeks: maxWeeks,
+            });
 
             try {
-                const response = await fetch(`${API_BASE}/admin/update-rankings?ranking_type=${rankingType}&max_weeks=${maxWeeks}&password=${password}`, {
-                    method: 'POST'
-                });
-
-                const data = await response.json();
-
+                const result = await adminFetch(`/admin/update-rankings?${params}`, { method: 'POST' });
+                if (!result) return;
+                const { response, data } = result;
                 if (response.ok) {
-                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
                 } else {
-                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                    alert(`Error: ${errorDetail(data)}`);
                 }
             } catch (error) {
-                alert(`❌ Error: ${error.message}`);
+                alert(`Error: ${error.message}`);
             }
         }
 
-        // Update Tournaments
         async function updateTournaments() {
-            const password = getPassword();
-            if (!password) return;
-
             const startYear = document.getElementById('startYear').value;
             const endYear = document.getElementById('endYear').value;
 
-            // Get checked types
             const types = [];
             ['atp', 'gs', 'ch', 'fu'].forEach(type => {
                 if (document.getElementById(`type_${type}`).checked) {
@@ -443,58 +455,52 @@
                 return;
             }
 
+            const params = new URLSearchParams({
+                start_year: startYear,
+                end_year: endYear,
+                types: types.join(','),
+            });
+
             try {
-                const response = await fetch(`${API_BASE}/admin/update-tournaments?start_year=${startYear}&end_year=${endYear}&types=${types.join(',')}&password=${password}`, {
-                    method: 'POST'
-                });
-
-                const data = await response.json();
-
+                const result = await adminFetch(`/admin/update-tournaments?${params}`, { method: 'POST' });
+                if (!result) return;
+                const { response, data } = result;
                 if (response.ok) {
-                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
                 } else {
-                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                    alert(`Error: ${errorDetail(data)}`);
                 }
             } catch (error) {
-                alert(`❌ Error: ${error.message}`);
+                alert(`Error: ${error.message}`);
             }
         }
 
-        // Update Players
         async function updatePlayers() {
-            const password = getPassword();
-            if (!password) return;
-
             const numPlayers = document.getElementById('numPlayers').value;
+            const params = new URLSearchParams({ num_players: numPlayers });
 
             try {
-                const response = await fetch(`${API_BASE}/admin/update-players?num_players=${numPlayers}&password=${password}`, {
-                    method: 'POST'
-                });
-
-                const data = await response.json();
-
+                const result = await adminFetch(`/admin/update-players?${params}`, { method: 'POST' });
+                if (!result) return;
+                const { response, data } = result;
                 if (response.ok) {
-                    alert(`✅ Success!\n${data.message}\nJob ID: ${data.job_id}`);
+                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
                 } else {
-                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                    alert(`Error: ${errorDetail(data)}`);
                 }
             } catch (error) {
-                alert(`❌ Error: ${error.message}`);
+                alert(`Error: ${error.message}`);
             }
         }
 
-        // Refresh Data Summary
         async function refreshDataSummary() {
-            const password = getPassword();
-            if (!password) return;
-
             try {
-                const response = await fetch(`${API_BASE}/admin/data-summary?password=${password}`);
-                const data = await response.json();
+                const result = await adminFetch('/admin/data-summary');
+                if (!result) return;
+                const { response, data } = result;
 
                 if (!response.ok) {
-                    alert(`❌ Error: ${data.detail || 'Unknown error'}`);
+                    alert(`Error: ${errorDetail(data)}`);
                     return;
                 }
 
@@ -583,14 +589,13 @@
             }
         }
 
-        // Fetch Jobs
         async function fetchJobs() {
-            const password = document.getElementById('password').value;
-            if (!password) return;
+            if (!document.getElementById('password').value) return;
 
             try {
-                const response = await fetch(`${API_BASE}/admin/jobs?password=${password}`);
-                const data = await response.json();
+                const result = await adminFetch('/admin/jobs');
+                if (!result) return;
+                const { response, data } = result;
 
                 if (!response.ok) {
                     document.getElementById('jobStatus').innerHTML = '<div class="empty-state">Error loading jobs</div>';
