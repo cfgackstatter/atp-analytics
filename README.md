@@ -9,7 +9,6 @@ A full-stack web application for tracking and visualizing ATP tennis rankings ov
 - 📈 Multi-player comparison with persistent color coding
 - 🎾 Historical ranking data from ATP Tour
 - 🏆 Tournament wins displayed on rankings chart
-- 👤 Player biographical data
 
 ## Tech Stack
 
@@ -83,8 +82,8 @@ Player scraping uses Playwright (headless browser) and is managed **manually** t
 ### Admin Features:
 
 - Scrape ATP rankings (singles/doubles)
-- Scrape player biographical data
 - Scrape tournament results
+- Scrape player records used for search (names / ids; bios are not shown in the UI)
 - View scraping job history
 
 ## Configuration
