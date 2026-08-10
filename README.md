@@ -78,7 +78,7 @@ atp-analytics/
 
 ## Data Scraping
 
-Player scraping uses Playwright (headless browser) and is managed **manually** through the admin interface at `/admin/dashboard`. There is no scheduled/weekly update endpoint.
+Player scraping uses Playwright (headless browser) and is managed **manually** through the admin interface at `/admin/dashboard`. There is no scheduled/weekly update endpoint. Scrapes run in a dedicated subprocess so the site stays up; concurrent scrapes are rejected (409) and data merges are locked/deduped.
 
 ### Admin Features:
 

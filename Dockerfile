@@ -42,8 +42,10 @@ ENV TMPDIR=/tmp/chromium-tmp
 # Ensure Playwright can find browsers
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
+# Scrapes run in a dedicated subprocess (see backend/api/job_manager.py),
+# so the web worker only needs a modest request timeout.
 CMD ["gunicorn", "application:application", \
      "-b", "0.0.0.0:8000", \
      "--workers", "1", \
-     "--timeout", "300", \
+     "--timeout", "120", \
      "--worker-class", "uvicorn.workers.UvicornWorker"]

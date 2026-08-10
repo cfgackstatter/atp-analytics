@@ -57,6 +57,8 @@ make logs
 - Data updates are **manual only** via `/admin/dashboard` (no weekly/EventBridge task)
 - Auth: `Authorization: Bearer <password>` on `/admin/*` API routes (dashboard HTML is public)
 - Rate limit: 60 requests / minute / IP on admin APIs
+- Scrapes run in a **subprocess** (web process stays responsive); only one scrape at a time (HTTP 409 if busy)
+- Parquet/S3 merges use a file write lock + rankings dedupe on `(player_id, date)`
 
 Example:
 ```bash
