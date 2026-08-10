@@ -1,10 +1,10 @@
 # backend/scraper/config.py
 """Configuration and constants for scraping."""
 
-# HTTP Configuration
+# Playwright navigation / selector waits (seconds → ms in http_utils)
 REQUEST_TIMEOUT = 30.0
 MAX_RETRIES = 3
-RETRY_BACKOFF_BASE = 2  # Exponential: 1s, 2s, 4s
+RETRY_BACKOFF_BASE = 2  # Exponential backoff: 1s, 2s, 4s
 
 # ATP Tour URLs
 ATP_BASE_URL = "https://www.atptour.com"

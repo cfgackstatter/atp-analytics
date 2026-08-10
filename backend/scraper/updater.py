@@ -52,39 +52,43 @@ def update_rankings(ranking_type: str, max_weeks: int | None = None) -> int:
     Scraping runs without the write lock; the final load/merge/save is locked
     so concurrent jobs cannot clobber each other.
     """
+    ranking_frames: list[pl.DataFrame] = []
+    player_frames: list[pl.DataFrame] = []
+
     with playwright_session() as ctx:
-        all_dates = get_ranking_dates(ranking_type, context=ctx)
+        page = ctx.new_page()
+        try:
+            all_dates = get_ranking_dates(ranking_type, page=page)
 
-        existing = load_rankings(ranking_type, schema=RANKINGS_SCHEMA)
-        scraped_dates = set(existing["date"].unique())
-        missing = sorted(
-            (d for d in all_dates if d not in scraped_dates),
-            reverse=True,
-        )
-
-        if not missing:
-            logger.info("No missing %s rankings to scrape", ranking_type)
-            return 0
-
-        dates_to_scrape = missing[:max_weeks] if max_weeks else missing
-        logger.info(
-            "Scraping %s weeks for %s...",
-            len(dates_to_scrape),
-            ranking_type,
-        )
-
-        ranking_frames: list[pl.DataFrame] = []
-        player_frames: list[pl.DataFrame] = []
-
-        for i, date in enumerate(dates_to_scrape, 1):
-            logger.info("  %s/%s: %s", i, len(dates_to_scrape), date)
-            rankings_df, players_df = scrape_ranking(
-                ranking_type, date, context=ctx
+            existing = load_rankings(ranking_type, schema=RANKINGS_SCHEMA)
+            scraped_dates = set(existing["date"].unique())
+            missing = sorted(
+                (d for d in all_dates if d not in scraped_dates),
+                reverse=True,
             )
-            if len(rankings_df) > 0:
-                ranking_frames.append(rankings_df)
-            if len(players_df) > 0:
-                player_frames.append(players_df)
+
+            if not missing:
+                logger.info("No missing %s rankings to scrape", ranking_type)
+                return 0
+
+            dates_to_scrape = missing[:max_weeks] if max_weeks else missing
+            logger.info(
+                "Scraping %s weeks for %s...",
+                len(dates_to_scrape),
+                ranking_type,
+            )
+
+            for i, date in enumerate(dates_to_scrape, 1):
+                logger.info("  %s/%s: %s", i, len(dates_to_scrape), date)
+                rankings_df, players_df = scrape_ranking(
+                    ranking_type, date, page=page
+                )
+                if len(rankings_df) > 0:
+                    ranking_frames.append(rankings_df)
+                if len(players_df) > 0:
+                    player_frames.append(players_df)
+        finally:
+            page.close()
 
     if not ranking_frames:
         logger.warning("No ranking data was successfully scraped")
@@ -144,10 +148,17 @@ def update_tournaments(
         raise ValueError("start_year must be <= end_year")
 
     frames: list[pl.DataFrame] = []
-    for year in range(start_year, end_year + 1):
-        for t_type in types:
-            logger.info("Scraping %s %s...", t_type, year)
-            frames.append(scrape_tournaments(year, t_type))
+    with playwright_session() as ctx:
+        page = ctx.new_page()
+        try:
+            for year in range(start_year, end_year + 1):
+                for t_type in types:
+                    logger.info("Scraping %s %s...", t_type, year)
+                    frames.append(
+                        scrape_tournaments(year, t_type, page=page)
+                    )
+        finally:
+            page.close()
 
     if not frames:
         return {"tournaments_scraped": 0, "total_tournaments": 0}
@@ -277,7 +288,8 @@ def update_player_bio(num_players: int = 10) -> int:
         players_to_scrape.append((pid, generate_player_slug(name)))
         player_name_map[pid] = name
 
-    batch_results = scrape_players_batch(players_to_scrape)
+    with playwright_session() as ctx:
+        batch_results = scrape_players_batch(players_to_scrape, context=ctx)
 
     updates: list[dict] = []
     for pid, data in batch_results.items():

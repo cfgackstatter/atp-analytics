@@ -161,24 +161,20 @@ def get_job_status(job_id: str):
 def test_playwright():
     """Smoke-test Playwright on this host (short, in-process)."""
     try:
-        from playwright.sync_api import sync_playwright
+        from backend.scraper.http_utils import goto_and_extract, playwright_session
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--single-process",
-                    "--no-zygote",
-                ],
-            )
-            page = browser.new_page()
-            page.goto("https://example.com", wait_until="commit", timeout=15000)
-            title = page.title()
-            browser.close()
+        with playwright_session() as ctx:
+            page = ctx.new_page()
+            try:
+                title = goto_and_extract(
+                    page,
+                    "https://example.com",
+                    selector="body",
+                    js="() => document.title",
+                    max_retries=1,
+                )
+            finally:
+                page.close()
         return {"status": "ok", "title": title}
     except Exception as e:
         logger.exception("Playwright smoke test failed")
