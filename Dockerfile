@@ -13,18 +13,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt gunicorn uvicorn
 
-# Install Playwright browsers in a consistent location
+# Official Playwright image already ships browsers; keep path consistent.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN playwright install chromium
-RUN playwright install-deps chromium
-
-# Verify installation works
-RUN python -c "from playwright.sync_api import sync_playwright; \
-    p = sync_playwright().start(); \
-    browser = p.chromium.launch(headless=True); \
-    print('✓ Chromium installed successfully'); \
-    browser.close(); \
-    p.stop()"
+ENV TMPDIR=/tmp/chromium-tmp
+RUN mkdir -p /tmp/chromium-tmp && chmod 777 /tmp/chromium-tmp
 
 # Copy application code
 COPY backend/ ./backend/
@@ -34,13 +26,6 @@ COPY application.py .
 COPY --from=frontend-builder /frontend/dist ./backend/static/
 
 EXPOSE 8000
-
-# Create temp directory for Chromium
-RUN mkdir -p /tmp/chromium-tmp && chmod 777 /tmp/chromium-tmp
-ENV TMPDIR=/tmp/chromium-tmp
-
-# Ensure Playwright can find browsers
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Scrapes run in a dedicated subprocess (see backend/api/job_manager.py),
 # so the web worker only needs a modest request timeout.
