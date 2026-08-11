@@ -1,6 +1,6 @@
 // frontend/src/components/RankingsChart.tsx
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -19,6 +19,9 @@ import 'chartjs-adapter-date-fns';
 import { format } from 'date-fns';
 import type { Player, RankingType, XAxisMode } from '../types';
 import { ageAtDate, formatAge, hasBirthdate, parsePlayerDate } from '../utils/playerAge';
+
+const DATE_RANGES = ['YTD', '1Y', '3Y', '5Y', 'All'] as const;
+type DateRange = (typeof DATE_RANGES)[number];
 
 type ChartPoint = { x: string | number; y: number; date: string };
 
@@ -57,6 +60,44 @@ interface RankingData {
   player_id: string;
   date: string;
   points: number;
+}
+
+function rangeStartDate(range: DateRange): Date {
+  const now = new Date();
+  switch (range) {
+    case 'YTD':
+      return new Date(now.getFullYear(), 0, 1);
+    case '1Y':
+      return new Date(new Date().setFullYear(now.getFullYear() - 1));
+    case '3Y':
+      return new Date(new Date().setFullYear(now.getFullYear() - 3));
+    case '5Y':
+      return new Date(new Date().setFullYear(now.getFullYear() - 5));
+    case 'All':
+      return new Date(0);
+  }
+}
+
+function rankingInRange(
+  rankings: RankingData[],
+  playerIds: Set<string>,
+  range: DateRange
+): boolean {
+  const start = rangeStartDate(range).getTime();
+  return rankings.some(
+    d => playerIds.has(d.player_id) && new Date(d.date).getTime() >= start
+  );
+}
+
+/** Smallest calendar window that still includes at least one ranking point. */
+function bestDateRange(
+  rankings: RankingData[],
+  playerIds: Set<string>
+): DateRange {
+  for (const range of DATE_RANGES) {
+    if (rankingInRange(rankings, playerIds, range)) return range;
+  }
+  return 'All';
 }
 
 interface Tournament {
@@ -141,20 +182,10 @@ function RankingsChart({
   rankingType,
   xAxisMode,
 }: Props) {
-  const [activeRange, setActiveRange] = useState<string>('1Y');
+  const [activeRange, setActiveRange] = useState<DateRange>('1Y');
+  // After the user picks a window, don't auto-widen away from an empty range.
+  const [rangePinned, setRangePinned] = useState(false);
   const byAge = xAxisMode === 'age';
-
-  const ranges: Record<string, () => Date> = {
-    'YTD': () => new Date(new Date().getFullYear(), 0, 1),
-    '1Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 1)),
-    '3Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 3)),
-    '5Y':  () => new Date(new Date().setFullYear(new Date().getFullYear() - 5)),
-    'All': () => new Date(0),
-  };
-
-  // Age mode overlays full careers; calendar windows (1Y, etc.) just shift
-  // each player to a different age band with little/no overlap.
-  const rangeStart = byAge ? ranges.All() : ranges[activeRange]();
 
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
   const birthdateByPlayer = Object.fromEntries(
@@ -162,11 +193,39 @@ function RankingsChart({
   );
   const playerMap = Object.fromEntries(players.map(p => [p.player_id, p.player_name]));
 
-  const eligiblePlayerIds = new Set(
-    byAge
-      ? players.filter(p => hasBirthdate(p.birthdate)).map(p => p.player_id)
-      : players.map(p => p.player_id)
+  const eligiblePlayerIds = useMemo(
+    () =>
+      new Set(
+        byAge
+          ? players.filter(p => hasBirthdate(p.birthdate)).map(p => p.player_id)
+          : players.map(p => p.player_id)
+      ),
+    [byAge, players]
   );
+
+  const playerSelectionKey = players
+    .map(p => p.player_id)
+    .sort()
+    .join(',');
+
+  // New player set → prefer 1Y, then auto-widen if that window is empty.
+  useEffect(() => {
+    setRangePinned(false);
+    setActiveRange('1Y');
+  }, [playerSelectionKey]);
+
+  // When the selected window has no points (e.g. retired player + default 1Y),
+  // widen to the smallest range that still plots something.
+  useEffect(() => {
+    if (byAge || rangePinned) return;
+    if (rankingInRange(data, eligiblePlayerIds, activeRange)) return;
+    const next = bestDateRange(data, eligiblePlayerIds);
+    if (next !== activeRange) setActiveRange(next);
+  }, [byAge, rangePinned, data, eligiblePlayerIds, activeRange]);
+
+  // Age mode overlays full careers; calendar windows (1Y, etc.) just shift
+  // each player to a different age band with little/no overlap.
+  const rangeStart = byAge ? rangeStartDate('All') : rangeStartDate(activeRange);
 
   const filteredData = data.filter(
     d =>
@@ -574,40 +633,48 @@ function RankingsChart({
     },
   };
 
+  const rangeControls = byAge ? (
+    <p className="text-sm text-gray-500 text-right">
+      Full careers overlaid by age (date ranges apply in Date view).
+    </p>
+  ) : (
+    <div className="flex gap-1 justify-end">
+      {DATE_RANGES.map(range => (
+        <button
+          key={range}
+          type="button"
+          onClick={() => {
+            setRangePinned(true);
+            setActiveRange(range);
+          }}
+          className={`px-3 py-1 text-sm rounded ${
+            activeRange === range
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {range}
+        </button>
+      ))}
+    </div>
+  );
+
   if (lineDatasets.length === 0) {
     return (
-      <div className="py-10 text-center text-gray-600">
-        {byAge
-          ? 'No ranking points to plot by age for the selected players.'
-          : 'No ranking points to plot in this range.'}
+      <div className="flex flex-col gap-2">
+        {rangeControls}
+        <div className="py-10 text-center text-gray-600">
+          {byAge
+            ? 'No ranking points to plot by age for the selected players.'
+            : 'No ranking points to plot in this range.'}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-2">
-      {byAge ? (
-        <p className="text-sm text-gray-500 text-right">
-          Full careers overlaid by age (date ranges apply in Date view).
-        </p>
-      ) : (
-        <div className="flex gap-1 justify-end">
-          {Object.keys(ranges).map(range => (
-            <button
-              key={range}
-              onClick={() => setActiveRange(range)}
-              className={`px-3 py-1 text-sm rounded ${
-                activeRange === range
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
-      )}
-
+      {rangeControls}
       <div style={{ height: '400px' }}>
         <Line data={chartData} options={options} />
       </div>
