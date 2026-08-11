@@ -1,8 +1,10 @@
-.PHONY: help build dev test deploy sync-env logs ssh clean status check-password
+.PHONY: help build frontend-build check-venv dev dev-hot test deploy sync-env logs ssh clean status check-password
 
 # Variables
 IMAGE_NAME := atp-analytics
 PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null)
+VENV_PYTHON := ./venv/bin/python
+VENV_UVICORN := ./venv/bin/uvicorn
 
 check-password:
 	@if [ -z "$(PASSWORD)" ]; then \
@@ -11,11 +13,34 @@ check-password:
 		exit 1; \
 	fi
 
+check-venv:
+	@if [ ! -x "$(VENV_UVICORN)" ]; then \
+		echo "Error: $(VENV_UVICORN) not found."; \
+		echo "Create the venv and install deps:"; \
+		echo "  python3 -m venv venv && ./venv/bin/pip install -r requirements.txt"; \
+		exit 1; \
+	fi
+
+# Build React into backend/static (what uvicorn/EB serve). Cleans old hashed assets.
+frontend-build:
+	@echo "Building frontend into backend/static/..."
+	@if [ ! -d frontend/node_modules ]; then \
+		echo "Installing frontend deps..."; \
+		cd frontend && npm install; \
+	fi
+	cd frontend && npm run build
+	rm -rf backend/static/assets
+	mkdir -p backend/static
+	cp -r frontend/dist/. backend/static/
+	@echo "Frontend synced to backend/static/"
+
 help:
 	@echo "ATP Analytics Development Commands"
 	@echo ""
-	@echo "  make dev         - Run locally with uvicorn + S3 (fast, no Docker)"
-	@echo "  make build       - Build Docker image (no cache)"
+	@echo "  make dev         - Rebuild frontend into static, run API on :8000 (latest UI+API)"
+	@echo "  make dev-hot     - API :8000 + Vite :3000 with hot reload (best for UI work)"
+	@echo "  make frontend-build - Rebuild React into backend/static only"
+	@echo "  make build       - frontend-build + Docker image (no cache)"
 	@echo "  make test        - Run locally in Docker with local data"
 	@echo "  make sync-env    - Push ADMIN_PASSWORD + FORCE_HTTPS to EB (no code deploy)"
 	@echo "  make deploy      - sync-env, then commit/push/deploy code to EB"
@@ -40,19 +65,36 @@ sync-env: check-password
 		AWS_REGION=us-east-1
 	@echo "EB environment variables updated."
 
-dev: check-password
-	@echo "Starting local dev server (http://localhost:8000)..."
+dev: check-password check-venv frontend-build
+	@echo "Starting local API + built frontend (http://localhost:8000)..."
 	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
 	@echo "API docs: http://localhost:8000/docs"
+	@echo "Tip: use 'make dev-hot' for instant frontend reload while editing React."
 	ADMIN_PASSWORD=$(PASSWORD) \
 	USE_S3=true \
 	ENABLE_DOCS=true \
 	FORCE_HTTPS=false \
-	uvicorn backend.api.main:app --reload --host 0.0.0.0 --port 8000
+	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port 8000
 
-build:
-	@echo "Building frontend..."
-	cd frontend && npm run build && cp -r dist/* ../backend/static/
+# Best for frontend iteration: Vite HMR proxies /players,/rankings,/admin,/tournaments → :8000
+dev-hot: check-password check-venv
+	@if [ ! -d frontend/node_modules ]; then \
+		echo "Installing frontend deps..."; \
+		cd frontend && npm install; \
+	fi
+	@echo "Starting API (http://localhost:8000) + Vite (http://localhost:3000)..."
+	@echo "Open http://localhost:3000 for the app (hot reload)."
+	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
+	@trap 'kill 0' EXIT INT TERM; \
+	ADMIN_PASSWORD=$(PASSWORD) \
+	USE_S3=true \
+	ENABLE_DOCS=true \
+	FORCE_HTTPS=false \
+	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port 8000 & \
+	cd frontend && npm run dev & \
+	wait
+
+build: frontend-build
 	@echo "Building Docker image..."
 	docker build -t $(IMAGE_NAME) . --no-cache
 

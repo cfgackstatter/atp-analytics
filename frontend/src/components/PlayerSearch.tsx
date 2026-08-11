@@ -2,11 +2,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import useDebounce from '../hooks/useDebounce';
-
-interface Player {
-  player_id: string;
-  player_name: string;
-}
+import type { Player } from '../types';
+import { hasBirthdate } from '../utils/playerAge';
 
 interface Props {
   onSelectPlayer: (player: Player) => void;
@@ -19,8 +16,6 @@ function PlayerSearch({ onSelectPlayer }: Props) {
   const debouncedSearch = useDebounce(searchTerm, 300);
 
   useEffect(() => {
-    console.log('Debounced search:', debouncedSearch);
-    
     const fetchSuggestions = async () => {
       if (debouncedSearch.length < 2) {
         setSuggestions([]);
@@ -28,18 +23,13 @@ function PlayerSearch({ onSelectPlayer }: Props) {
       }
 
       try {
-        console.log('Fetching suggestions for:', debouncedSearch);
         const response = await axios.get('/players/search', {
-          params: { q: debouncedSearch }
+          params: { q: debouncedSearch },
         });
-        
-        console.log('API response:', response.data);
-        
+
         if (Array.isArray(response.data)) {
           setSuggestions(response.data);
-          console.log('Set suggestions:', response.data);
         } else {
-          console.error('Unexpected response format:', response.data);
           setSuggestions([]);
         }
         setShowSuggestions(true);
@@ -53,13 +43,15 @@ function PlayerSearch({ onSelectPlayer }: Props) {
   }, [debouncedSearch]);
 
   const handleSelect = (player: Player) => {
-    onSelectPlayer(player);
+    onSelectPlayer({
+      player_id: player.player_id,
+      player_name: player.player_name,
+      birthdate: player.birthdate ?? null,
+    });
     setSearchTerm('');
     setSuggestions([]);
     setShowSuggestions(false);
   };
-
-  console.log('Rendering with suggestions:', suggestions, 'showSuggestions:', showSuggestions);
 
   return (
     <div className="relative">
@@ -82,6 +74,9 @@ function PlayerSearch({ onSelectPlayer }: Props) {
             >
               <span className="text-gray-800 font-medium">{player.player_name}</span>
               <span className="text-gray-400 text-sm ml-2">({player.player_id})</span>
+              {!hasBirthdate(player.birthdate) && (
+                <span className="text-gray-400 text-xs ml-2">no DOB</span>
+              )}
             </button>
           ))}
         </div>

@@ -17,8 +17,10 @@ import type { ChartData, ChartOptions, InteractionMode, Scale } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
 import { format } from 'date-fns';
+import type { Player, RankingType, XAxisMode } from '../types';
+import { ageAtDate, formatAge, hasBirthdate, parsePlayerDate } from '../utils/playerAge';
 
-type ChartPoint = { x: string; y: number };
+type ChartPoint = { x: string | number; y: number; date: string };
 
 interface RankingDataset {
   type: 'line' | 'scatter';
@@ -57,11 +59,6 @@ interface RankingData {
   points: number;
 }
 
-interface Player {
-  player_id: string;
-  player_name: string;
-}
-
 interface Tournament {
   year: number;
   tournament_type: string;
@@ -78,7 +75,8 @@ interface Props {
   players: Player[];
   playerColors: Record<string, string>;
   tournaments: Tournament[] | null | undefined;
-  rankingType: 'singles' | 'doubles';
+  rankingType: RankingType;
+  xAxisMode: XAxisMode;
 }
 
 interface TournamentWin {
@@ -89,15 +87,13 @@ interface TournamentWin {
   venue: string | null;
 }
 
-// Tournament type to marker size mapping
 const TOURNAMENT_SIZES: Record<string, { radius: number; hoverRadius: number }> = {
-  'fu': { radius: 3, hoverRadius: 6 },      // ITF - smallest
-  'ch': { radius: 4, hoverRadius: 7 },      // Challengers
-  'atp': { radius: 5, hoverRadius: 8 },     // ATP
-  'gs': { radius: 6, hoverRadius: 9 },     // Grand Slam - largest
+  'fu': { radius: 3, hoverRadius: 6 },
+  'ch': { radius: 4, hoverRadius: 7 },
+  'atp': { radius: 5, hoverRadius: 8 },
+  'gs': { radius: 6, hoverRadius: 9 },
 };
 
-// Tournament type display names
 const TOURNAMENT_TYPE_LABELS: Record<string, string> = {
   'atp': 'ATP',
   'ch': 'Challenger',
@@ -137,8 +133,16 @@ function findClosestRankingDate(
   return closestDate;
 }
 
-function RankingsChart({ data, players, playerColors, tournaments, rankingType }: Props) {
+function RankingsChart({
+  data,
+  players,
+  playerColors,
+  tournaments,
+  rankingType,
+  xAxisMode,
+}: Props) {
   const [activeRange, setActiveRange] = useState<string>('1Y');
+  const byAge = xAxisMode === 'age';
 
   const ranges: Record<string, () => Date> = {
     'YTD': () => new Date(new Date().getFullYear(), 0, 1),
@@ -151,15 +155,33 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
   const rangeStart = ranges[activeRange]();
 
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
+  const birthdateByPlayer = Object.fromEntries(
+    players.map(p => [p.player_id, p.birthdate ?? null])
+  );
   const playerMap = Object.fromEntries(players.map(p => [p.player_id, p.player_name]));
 
-  const filteredData = data.filter(d => new Date(d.date) >= rangeStart);
+  const eligiblePlayerIds = new Set(
+    byAge
+      ? players.filter(p => hasBirthdate(p.birthdate)).map(p => p.player_id)
+      : players.map(p => p.player_id)
+  );
+
+  const filteredData = data.filter(
+    d =>
+      eligiblePlayerIds.has(d.player_id) &&
+      new Date(d.date) >= rangeStart
+  );
 
   const playerGroups = filteredData.reduce((acc, curr) => {
     if (!acc[curr.player_id]) acc[curr.player_id] = [];
     acc[curr.player_id].push(curr);
     return acc;
   }, {} as Record<string, RankingData[]>);
+
+  const toX = (playerId: string, rankingDate: string): string | number | null => {
+    if (!byAge) return rankingDate;
+    return ageAtDate(birthdateByPlayer[playerId], rankingDate);
+  };
 
   const getPlayerWins = (playerId: string): TournamentWin[] => {
     const id = String(playerId);
@@ -216,18 +238,32 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
   Object.entries(playerGroups).forEach(([playerId, rankings]) => {
     const sortedRankings = rankings
       .filter(r => r.rank != null && r.date)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map(r => {
+        const x = toX(playerId, r.date);
+        if (x == null) return null;
+        return { ranking: r, x };
+      })
+      .filter((row): row is { ranking: RankingData; x: string | number } => row != null);
 
     if (sortedRankings.length === 0) return;
 
-    const basePoints = sortedRankings.map(r => ({ x: r.date, y: r.rank }));
+    if (byAge) {
+      sortedRankings.sort((a, b) => Number(a.x) - Number(b.x));
+    }
+
+    const basePoints: ChartPoint[] = sortedRankings.map(({ ranking, x }) => ({
+      x,
+      y: ranking.rank,
+      date: ranking.date,
+    }));
     const color = playerColors[playerId];
 
     const playerTournamentMap = tournamentsByPlayerDate[playerId];
 
-    const markersByType: Record<string, Array<{ x: string; y: number; tournaments: TournamentWin[] }>> = {};
+    const markersByType: Record<string, ChartPoint[]> = {};
 
-    sortedRankings.forEach(ranking => {
+    sortedRankings.forEach(({ ranking, x }) => {
       const tournamentsAtDate = playerTournamentMap.get(ranking.date);
       if (tournamentsAtDate && tournamentsAtDate.length > 0) {
         const typeOrder = ['gs', 'atp', 'ch', 'fu'];
@@ -243,9 +279,9 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
           markersByType[primaryType] = [];
         }
         markersByType[primaryType].push({
-          x: ranking.date,
+          x,
           y: ranking.rank,
-          tournaments: tournamentsAtDate
+          date: ranking.date,
         });
       }
     });
@@ -269,7 +305,7 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
       markerDatasets.push({
         type: 'scatter' as const,
         label: `${playerMap[playerId]} Tournament Wins`,
-        data: markers.map(m => ({ x: m.x, y: m.y })),
+        data: markers,
         borderColor: color,
         borderWidth: 3,
         hoverBorderWidth: 3,
@@ -288,6 +324,43 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
   const chartData = {
     datasets: [...markerDatasets, ...lineDatasets],
   } as ChartData<'line', ChartPoint[]>;
+
+  const xScale = byAge
+    ? {
+        type: 'linear' as const,
+        title: {
+          display: true,
+          text: 'Age',
+          font: { size: 13 },
+        },
+        ticks: {
+          maxTicksLimit: 12,
+          callback: (value: string | number) => {
+            const n = typeof value === 'number' ? value : Number(value);
+            return Number.isFinite(n) ? n.toFixed(n % 1 === 0 ? 0 : 1) : '';
+          },
+        },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.05)',
+        },
+      }
+    : {
+        type: 'time' as const,
+        time: {
+          unit: 'month' as const,
+        },
+        ticks: {
+          maxTicksLimit: 12,
+        },
+        title: {
+          display: true,
+          text: 'Date',
+          font: { size: 13 },
+        },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.05)',
+        },
+      };
 
   const options: ChartOptions<'line'> = {
     responsive: true,
@@ -349,15 +422,20 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
             return;
           }
 
-          const hoveredDate = sortedItems[0]?.parsed?.x
-            ? new Date(sortedItems[0].parsed.x)
-            : null;
-
-          // Build HTML with uniform formatting
           let innerHtml = '<div>';
 
-          if (hoveredDate) {
-            innerHtml += `<div style="font-weight: bold; margin-bottom: 6px;">${format(hoveredDate, 'MMM dd, yyyy')}</div>`;
+          if (byAge) {
+            const age = sortedItems[0]?.parsed?.x;
+            if (typeof age === 'number' && Number.isFinite(age)) {
+              innerHtml += `<div style="font-weight: bold; margin-bottom: 6px;">Age ${formatAge(age)}</div>`;
+            }
+          } else {
+            const hoveredDate = sortedItems[0]?.parsed?.x
+              ? new Date(sortedItems[0].parsed.x)
+              : null;
+            if (hoveredDate && !Number.isNaN(hoveredDate.getTime())) {
+              innerHtml += `<div style="font-weight: bold; margin-bottom: 6px;">${format(hoveredDate, 'MMM dd, yyyy')}</div>`;
+            }
           }
 
           sortedItems.forEach((item) => {
@@ -366,13 +444,24 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
             const playerName = playerMap[playerId] || dataset.label;
             const rank = Math.round(item.parsed.y ?? 0);
             const color = dataset.borderColor;
-            const dateStr = dataset.data[item.dataIndex]?.x;
+            const point = dataset.data[item.dataIndex];
+            const dateStr = point?.date;
 
-            innerHtml += `<div style="color: ${color}; margin-bottom: 3px;">${playerName}: Rank ${rank}</div>`;
+            let line = `${playerName}: Rank ${rank}`;
+            if (byAge && dateStr) {
+              const parsed = parsePlayerDate(dateStr);
+              if (parsed) {
+                line += ` (${format(parsed, 'MMM yyyy')})`;
+              }
+            }
+
+            innerHtml += `<div style="color: ${color}; margin-bottom: 3px;">${line}</div>`;
 
             const playerTournamentMap = tournamentsByPlayerDate[playerId];
-            const tournaments = playerTournamentMap?.get(dateStr) || [];
-            tournaments.forEach(tournament => {
+            const tournamentsAtPoint = dateStr
+              ? playerTournamentMap?.get(dateStr) || []
+              : [];
+            tournamentsAtPoint.forEach(tournament => {
               const typeLabel = TOURNAMENT_TYPE_LABELS[tournament.tournamentType] || tournament.tournamentType.toUpperCase();
               const venue = tournament.venue || '';
 
@@ -394,101 +483,62 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
           innerHtml += '</div>';
           tooltipEl.innerHTML = innerHtml;
 
-          // Smart positioning to avoid blocking chart and stay in bounds
           const position = context.chart.canvas.getBoundingClientRect();
           const tooltipWidth = tooltipEl.offsetWidth;
           const tooltipHeight = tooltipEl.offsetHeight;
 
-          // Get chart dimensions
           const chartLeft = position.left;
-          const chartRight = position.right;
-          const chartTop = position.top;
-          const chartBottom = position.bottom;
-          const chartWidth = chartRight - chartLeft;
-          const chartHeight = chartBottom - chartTop;
+          const chartWidth = position.right - position.left;
+          const chartHeight = position.bottom - position.top;
 
-          // Cursor position relative to chart
           const caretX = tooltipModel.caretX;
           const caretY = tooltipModel.caretY;
 
-          // Calculate position preferences
-          // Prefer right side if cursor is in left half, left side if in right half
           const preferRight = caretX < chartWidth / 2;
-
-          // Prefer top if cursor is in bottom half, bottom if in top half
           const preferTop = caretY > chartHeight / 2;
 
-          let tooltipX, tooltipY;
+          let tooltipX: number;
+          let tooltipY: number;
 
-          // Horizontal positioning
           if (preferRight) {
-            // Place to the right
             tooltipX = chartLeft + window.pageXOffset + caretX + 15;
-            // Check if it goes off screen
             if (tooltipX + tooltipWidth > window.innerWidth - 10) {
-              // Place to the left instead
               tooltipX = chartLeft + window.pageXOffset + caretX - tooltipWidth - 15;
             }
           } else {
-            // Place to the left
             tooltipX = chartLeft + window.pageXOffset + caretX - tooltipWidth - 15;
-            // Check if it goes off screen
             if (tooltipX < 10) {
-              // Place to the right instead
               tooltipX = chartLeft + window.pageXOffset + caretX + 15;
             }
           }
 
-          // Vertical positioning
           if (preferTop) {
-            // Place above
-            tooltipY = chartTop + window.pageYOffset + caretY - tooltipHeight - 15;
-            // Check if it goes off screen
+            tooltipY = position.top + window.pageYOffset + caretY - tooltipHeight - 15;
             if (tooltipY < window.pageYOffset + 10) {
-              // Place below instead
-              tooltipY = chartTop + window.pageYOffset + caretY + 15;
+              tooltipY = position.top + window.pageYOffset + caretY + 15;
             }
           } else {
-            // Place below
-            tooltipY = chartTop + window.pageYOffset + caretY + 15;
-            // Check if it goes off screen
+            tooltipY = position.top + window.pageYOffset + caretY + 15;
             if (tooltipY + tooltipHeight > window.pageYOffset + window.innerHeight - 10) {
-              // Place above instead
-              tooltipY = chartTop + window.pageYOffset + caretY - tooltipHeight - 15;
+              tooltipY = position.top + window.pageYOffset + caretY - tooltipHeight - 15;
             }
           }
 
-          // Clamp to ensure it stays within viewport
           tooltipX = Math.max(10, Math.min(tooltipX, window.innerWidth - tooltipWidth - 10));
-          tooltipY = Math.max(window.pageYOffset + 10, Math.min(tooltipY, window.pageYOffset + window.innerHeight - tooltipHeight - 10));
+          tooltipY = Math.max(
+            window.pageYOffset + 10,
+            Math.min(tooltipY, window.pageYOffset + window.innerHeight - tooltipHeight - 10)
+          );
 
           tooltipEl.style.opacity = '1';
           tooltipEl.style.left = tooltipX + 'px';
           tooltipEl.style.top = tooltipY + 'px';
-          tooltipEl.style.transform = 'none'; // Remove the centering transform
+          tooltipEl.style.transform = 'none';
         },
       },
     },
     scales: {
-      x: {
-        type: 'time' as const,
-        time: {
-          unit: 'month' as const,
-        },
-        ticks: {
-          maxTicksLimit: 12,
-        },
-        title: {
-          display: true,
-          text: 'Date',
-          font: {
-            size: 13,
-          },
-        },
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        },
-      },
+      x: xScale,
       y: {
         reverse: true,
         grace: '5%',
@@ -522,9 +572,18 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
     },
   };
 
+  if (lineDatasets.length === 0) {
+    return (
+      <div className="py-10 text-center text-gray-600">
+        {byAge
+          ? 'No ranking points to plot by age for the selected players in this range.'
+          : 'No ranking points to plot in this range.'}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Range buttons */}
       <div className="flex gap-1 justify-end">
         {Object.keys(ranges).map(range => (
           <button
@@ -541,7 +600,6 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
         ))}
       </div>
 
-      {/* Chart */}
       <div style={{ height: '400px' }}>
         <Line data={chartData} options={options} />
       </div>

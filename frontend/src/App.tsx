@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import RankingsChart from './components/RankingsChart';
 import PlayerSearch from './components/PlayerSearch';
+import type { Player, RankingType, XAxisMode } from './types';
+import { hasBirthdate } from './utils/playerAge';
 
 interface RankingData {
   rank: number;
@@ -11,16 +13,11 @@ interface RankingData {
   points: number;
 }
 
-interface Player {
-  player_id: string;
-  player_name: string;
-}
-
 interface Tournament {
   year: number;
   tournament_type: string;
   tournament_name: string;
-  venue: string | null;  // ← ADDED THIS
+  venue: string | null;
   start_date: string | null;
   end_date: string | null;
   singles_winner_id: string | null;
@@ -36,16 +33,14 @@ const PLAYER_COLORS = [
   '#EC4899', // pink
 ];
 
-type RankingType = 'singles' | 'doubles';
-
 function App() {
   const [rankingType, setRankingType] = useState<RankingType>('singles');
+  const [xAxisMode, setXAxisMode] = useState<XAxisMode>('date');
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
   const [rankingsData, setRankingsData] = useState<RankingData[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Create a stable color mapping based on player order in selectedPlayers
   const playerColors = useMemo(() => {
     return Object.fromEntries(
       selectedPlayers.map((player, index) => [
@@ -54,6 +49,14 @@ function App() {
       ])
     );
   }, [selectedPlayers]);
+
+  const playersWithBirthdate = useMemo(
+    () => selectedPlayers.filter(p => hasBirthdate(p.birthdate)),
+    [selectedPlayers]
+  );
+  const canUseAgeAxis = playersWithBirthdate.length > 0;
+  const effectiveXAxisMode: XAxisMode =
+    xAxisMode === 'age' && canUseAgeAxis ? 'age' : 'date';
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +122,13 @@ function App() {
     setSelectedPlayers(selectedPlayers.filter(p => p.player_id !== playerId));
   };
 
+  const toggleBtn = (active: boolean, extra = '') =>
+    `px-4 py-3 font-medium transition-colors ${extra} ${
+      active
+        ? 'bg-blue-600 text-white'
+        : 'bg-white text-gray-700 hover:bg-gray-50'
+    }`;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-6 max-w-7xl">
@@ -133,30 +143,45 @@ function App() {
         </header>
 
         <div className="bg-white rounded-lg shadow-lg p-5 mb-6">
-          <div className="flex gap-2">
-            <div className="flex-1">
+          <div className="flex flex-wrap gap-2">
+            <div className="flex-1 min-w-[16rem]">
               <PlayerSearch onSelectPlayer={handleAddPlayer} />
             </div>
             <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden">
               <button
                 onClick={() => setRankingType('singles')}
-                className={`px-4 py-3 font-medium transition-colors ${
-                  rankingType === 'singles'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+                className={toggleBtn(rankingType === 'singles')}
               >
                 Singles
               </button>
               <button
                 onClick={() => setRankingType('doubles')}
-                className={`px-4 py-3 font-medium transition-colors border-l border-gray-300 ${
-                  rankingType === 'doubles'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
+                className={toggleBtn(rankingType === 'doubles', 'border-l border-gray-300')}
               >
                 Doubles
+              </button>
+            </div>
+            <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setXAxisMode('date')}
+                className={toggleBtn(effectiveXAxisMode === 'date')}
+              >
+                Date
+              </button>
+              <button
+                onClick={() => canUseAgeAxis && setXAxisMode('age')}
+                disabled={!canUseAgeAxis}
+                title={
+                  canUseAgeAxis
+                    ? 'Plot rankings by player age'
+                    : 'Add a player with a known birthdate to use Age'
+                }
+                className={toggleBtn(
+                  effectiveXAxisMode === 'age',
+                  `border-l border-gray-300 ${!canUseAgeAxis ? 'opacity-40 cursor-not-allowed hover:bg-white' : ''}`
+                )}
+              >
+                Age
               </button>
             </div>
           </div>
@@ -175,6 +200,9 @@ function App() {
                     }}
                   >
                     <span>{player.player_name}</span>
+                    {effectiveXAxisMode === 'age' && !hasBirthdate(player.birthdate) && (
+                      <span className="text-xs opacity-70">(no DOB)</span>
+                    )}
                     <button
                       onClick={() => handleRemovePlayer(player.player_id)}
                       className="hover:opacity-70 font-bold text-lg leading-none"
@@ -184,6 +212,13 @@ function App() {
                   </div>
                 ))}
               </div>
+              {effectiveXAxisMode === 'age' &&
+                playersWithBirthdate.length < selectedPlayers.length && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    Age view shows {playersWithBirthdate.length} of{' '}
+                    {selectedPlayers.length} players (birthdate required).
+                  </p>
+                )}
             </div>
           )}
         </div>
@@ -203,6 +238,7 @@ function App() {
               playerColors={playerColors}
               tournaments={tournaments}
               rankingType={rankingType}
+              xAxisMode={effectiveXAxisMode}
             />
           </div>
         )}
