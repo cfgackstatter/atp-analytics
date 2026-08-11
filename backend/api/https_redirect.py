@@ -20,11 +20,21 @@ def request_is_https(request: Request) -> bool:
     return proto.split(",", 1)[0].strip().lower() == "https"
 
 
+# ELB/ALB probes are plain HTTP and must not be redirected or the instance
+# never becomes healthy during rolling updates.
+_HEALTH_PATHS = frozenset({"/health", "/health/"})
+
+
 class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
     """Redirect HTTP → HTTPS when FORCE_HTTPS is enabled; set HSTS on HTTPS."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         if not force_https_enabled():
+            return await call_next(request)
+
+        path = request.url.path
+        user_agent = request.headers.get("user-agent", "")
+        if path in _HEALTH_PATHS or "ELB-HealthChecker" in user_agent:
             return await call_next(request)
 
         if not request_is_https(request):

@@ -75,7 +75,8 @@ deploy: sync-env
 		echo "No changes to commit, pushing existing commits..."; \
 		git push || echo "Already up to date"; \
 	fi
-	eb deploy
+	# Rolling updates (e.g. root volume resize) often exceed the 10m default.
+	eb deploy --timeout 45
 	@echo "Deployment complete! Run 'make logs' to view logs."
 
 logs:
