@@ -56,46 +56,58 @@ function App() {
   }, [selectedPlayers]);
 
   useEffect(() => {
-    fetchTournaments();
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await axios.get('/tournaments');
+        if (cancelled) return;
+        const data = response.data;
+        setTournaments(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Error fetching tournaments:', error);
+        if (!cancelled) setTournaments([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (selectedPlayers.length > 0) {
-      fetchRankings();
-    } else {
-      setRankingsData([]);
+    if (selectedPlayers.length === 0) {
+      return;
     }
+
+    const ids = selectedPlayers.map(p => p.player_id).join(',');
+    let cancelled = false;
+
+    (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      setLoading(true);
+      try {
+        const response = await axios.get('/rankings/stored', {
+          params: {
+            ranking_type: rankingType,
+            player_ids: ids,
+          },
+        });
+        if (!cancelled) setRankingsData(response.data);
+      } catch (error) {
+        console.error('Error fetching rankings:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedPlayers, rankingType]);
 
-  const fetchTournaments = async () => {
-    try {
-      const response = await axios.get('/tournaments');
-      const data = response.data;
-      setTournaments(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching tournaments:', error);
-      setTournaments([]);
-    }
-  };
-
-  const fetchRankings = async () => {
-    const ids = selectedPlayers.map(p => p.player_id).join(',');
-    
-    setLoading(true);
-    try {
-      const response = await axios.get('/rankings/stored', {
-        params: { 
-          ranking_type: rankingType,
-          player_ids: ids
-        }
-      });
-      setRankingsData(response.data);
-    } catch (error) {
-      console.error('Error fetching rankings:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const chartRankings = selectedPlayers.length > 0 ? rankingsData : [];
 
   const handleAddPlayer = (player: Player) => {
     if (!selectedPlayers.find(p => p.player_id === player.player_id)) {
@@ -183,10 +195,10 @@ function App() {
           </div>
         )}
 
-        {!loading && rankingsData.length > 0 && (
+        {!loading && chartRankings.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-5">
             <RankingsChart
-              data={rankingsData}
+              data={chartRankings}
               players={selectedPlayers}
               playerColors={playerColors}
               tournaments={tournaments}
@@ -195,7 +207,7 @@ function App() {
           </div>
         )}
 
-        {!loading && selectedPlayers.length > 0 && rankingsData.length === 0 && (
+        {!loading && selectedPlayers.length > 0 && chartRankings.length === 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
             <p className="text-yellow-800">No ranking data found for selected players.</p>
           </div>

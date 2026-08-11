@@ -13,10 +13,30 @@ import {
   TimeScale,
   ScatterController,
 } from 'chart.js';
-import type { InteractionMode } from 'chart.js';
+import type { ChartData, ChartOptions, InteractionMode, Scale } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
 import { format } from 'date-fns';
+
+type ChartPoint = { x: string; y: number };
+
+interface RankingDataset {
+  type: 'line' | 'scatter';
+  label: string;
+  data: ChartPoint[];
+  borderColor: string;
+  backgroundColor: string;
+  playerId: string;
+  tension?: number;
+  borderWidth?: number;
+  hoverBorderWidth?: number;
+  hoverBackgroundColor?: string;
+  pointRadius?: number;
+  pointHoverRadius?: number;
+  pointStyle?: string;
+  showLine?: boolean;
+  tournamentType?: string;
+}
 
 ChartJS.register(
   CategoryScale,
@@ -190,8 +210,8 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
     tournamentsByPlayerDate[playerId] = dateMap;
   });
 
-  const lineDatasets: any[] = [];
-  const markerDatasets: any[] = [];
+  const lineDatasets: RankingDataset[] = [];
+  const markerDatasets: RankingDataset[] = [];
 
   Object.entries(playerGroups).forEach(([playerId, rankings]) => {
     const sortedRankings = rankings
@@ -267,9 +287,9 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
 
   const chartData = {
     datasets: [...markerDatasets, ...lineDatasets],
-  };
+  } as ChartData<'line', ChartPoint[]>;
 
-  const options = {
+  const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: {
@@ -286,7 +306,7 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
       },
       tooltip: {
         enabled: false,
-        external: function(context: any) {
+        external: function(context) {
           let tooltipEl = document.getElementById('chartjs-tooltip');
 
           if (!tooltipEl) {
@@ -317,15 +337,21 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
           }
 
           const items = tooltipModel.dataPoints || [];
-          const lineItems = items.filter((item: any) => item.dataset.type !== 'scatter');
-          const sortedItems = [...lineItems].sort((a: any, b: any) => a.parsed.y - b.parsed.y);
+          const lineItems = items.filter(
+            (item) => (item.dataset as unknown as RankingDataset).type !== 'scatter'
+          );
+          const sortedItems = [...lineItems].sort(
+            (a, b) => (a.parsed.y ?? 0) - (b.parsed.y ?? 0)
+          );
 
           if (sortedItems.length === 0) {
             tooltipEl.style.opacity = '0';
             return;
           }
 
-          const hoveredDate = sortedItems[0]?.parsed?.x ? new Date(sortedItems[0].parsed.x) : null;
+          const hoveredDate = sortedItems[0]?.parsed?.x
+            ? new Date(sortedItems[0].parsed.x)
+            : null;
 
           // Build HTML with uniform formatting
           let innerHtml = '<div>';
@@ -334,11 +360,11 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
             innerHtml += `<div style="font-weight: bold; margin-bottom: 6px;">${format(hoveredDate, 'MMM dd, yyyy')}</div>`;
           }
 
-          sortedItems.forEach((item: any) => {
-            const dataset = item.dataset;
+          sortedItems.forEach((item) => {
+            const dataset = item.dataset as unknown as RankingDataset;
             const playerId = dataset.playerId;
             const playerName = playerMap[playerId] || dataset.label;
-            const rank = Math.round(item.parsed.y);
+            const rank = Math.round(item.parsed.y ?? 0);
             const color = dataset.borderColor;
             const dateStr = dataset.data[item.dataIndex]?.x;
 
@@ -469,11 +495,12 @@ function RankingsChart({ data, players, playerColors, tournaments, rankingType }
         ticks: {
           stepSize: 1,
           maxTicksLimit: 10,
-          callback: function (value: any) {
-            return Number.isInteger(value) && value >= 1 ? value : '';
+          callback: function (value: string | number) {
+            const n = typeof value === 'number' ? value : Number(value);
+            return Number.isInteger(n) && n >= 1 ? n : '';
           },
         },
-        afterDataLimits: (axis: any) => {
+        afterDataLimits: (axis: Scale) => {
           if (axis.min < 1) {
             axis.min = 0.5;
           }
