@@ -1,4 +1,4 @@
-.PHONY: help build frontend-build check-venv dev dev-hot test deploy sync-env logs ssh clean status check-password
+.PHONY: help build frontend-build check-venv dev dev-hot pytest test deploy sync-env logs ssh clean status check-password
 
 # Variables
 IMAGE_NAME := atp-analytics
@@ -41,7 +41,8 @@ help:
 	@echo "  make dev-hot     - API :8000 + Vite :3000 with hot reload (best for UI work)"
 	@echo "  make frontend-build - Rebuild React into backend/static only"
 	@echo "  make build       - frontend-build + Docker image (no cache)"
-	@echo "  make test        - Run locally in Docker with local data"
+	@echo "  make pytest      - Run unit tests"
+	@echo "  make test        - Run app locally in Docker with local data"
 	@echo "  make sync-env    - Push ADMIN_PASSWORD + FORCE_HTTPS to EB (no code deploy)"
 	@echo "  make deploy      - sync-env, then commit/push/deploy code to EB"
 	@echo "  make logs        - Stream EB logs"
@@ -97,6 +98,10 @@ dev-hot: check-password check-venv
 build: frontend-build
 	@echo "Building Docker image..."
 	docker build -t $(IMAGE_NAME) . --no-cache
+
+pytest: check-venv
+	@echo "Running unit tests..."
+	$(VENV_PYTHON) -m pytest -q
 
 test: check-password build
 	@echo "Starting Docker test environment (http://localhost:8000)..."

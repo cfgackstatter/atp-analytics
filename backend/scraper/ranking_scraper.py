@@ -148,39 +148,6 @@ def get_ranking_dates(
     return dates
 
 
-def scrape_ranking(
-    ranking_type: str,
-    date: str,
-    context=None,
-    page: Page | None = None,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Scrape rankings for a specific date. Soft-fails to empty frames."""
-    url = ranking_page_url(ranking_type, date)
-
-    try:
-        with owned_page(context, page) as p:
-            rows = goto_and_extract(
-                p,
-                url,
-                selector=RANKINGS_ROW_SELECTOR,
-                js=_ROWS_JS,
-            )
-    except Exception as exc:
-        return soft_fail(
-            logger,
-            f"{ranking_type} rankings for {date}",
-            exc,
-            _empty_frames,
-        )
-
-    rankings_df, players_df = rows_to_dataframes(rows or [], ranking_type, date)
-    if len(rankings_df) == 0:
-        logger.warning("No ranking rows found for %s", date)
-    else:
-        logger.info("Scraped %s rows for %s %s", len(rankings_df), ranking_type, date)
-    return rankings_df, players_df
-
-
 async def async_scrape_ranking(
     page: AsyncPage,
     ranking_type: str,

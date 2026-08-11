@@ -10,6 +10,7 @@ import polars as pl
 
 from backend.scraper.config import (
     BIO_COLUMNS,
+    BIO_PRESENT_FIELDS,
     PLAYER_SCRAPE_COOLDOWN_DAYS,
     RANKING_CHECKPOINT_WEEKS,
     VALID_TOURNAMENT_TYPES,
@@ -393,8 +394,7 @@ def update_player_bio(num_players: int = 10) -> int:
         )
     )
 
-    bio_check_cols = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
-    conditions = [pl.col(col).is_null() for col in bio_check_cols]
+    conditions = [pl.col(col).is_null() for col in BIO_PRESENT_FIELDS]
     missing = enriched.filter(pl.any_horizontal(conditions)) if conditions else enriched
 
     if PLAYER_SCRAPE_COOLDOWN_DAYS > 0:

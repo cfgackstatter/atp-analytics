@@ -99,10 +99,6 @@ def browser_launch_args(*, single_process: bool | None = None) -> list[str]:
     return args
 
 
-# Back-compat alias used by older call sites / smoke tests.
-BROWSER_ARGS = browser_launch_args()
-
-
 def _timeout_ms() -> int:
     return int(REQUEST_TIMEOUT * 1000)
 

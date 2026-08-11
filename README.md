@@ -12,7 +12,7 @@ A full-stack web application for tracking and visualizing ATP tennis rankings ov
 
 ## Tech Stack
 
-**Backend:** FastAPI, Polars, Playwright, BeautifulSoup4  
+**Backend:** FastAPI, Polars, Playwright  
 **Frontend:** React, TypeScript, Chart.js, TailwindCSS  
 **Deployment:** AWS Elastic Beanstalk, Docker, S3
 

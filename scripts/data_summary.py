@@ -9,7 +9,7 @@ sys.path.append('.')
 
 from pathlib import Path
 import polars as pl
-from backend.storage.s3_data_store import DATA_DIR, load_rankings, load_players, load_tournaments
+from backend.storage.s3_data_store import LOCAL_DATA_DIR, load_rankings, load_players, load_tournaments
 
 def print_header(title: str):
     """Print a formatted section header."""
@@ -230,13 +230,13 @@ def summarize_files():
     """Summarize data files."""
     print_header("DATA FILES")
 
-    print(f"Data directory: {DATA_DIR.absolute()}\n")
+    print(f"Data directory: {LOCAL_DATA_DIR.absolute()}\n")
 
-    if not DATA_DIR.exists():
+    if not LOCAL_DATA_DIR.exists():
         print("⚠️  Data directory does not exist")
         return
 
-    files = sorted(DATA_DIR.glob("*.parquet"))
+    files = sorted(LOCAL_DATA_DIR.glob("*.parquet"))
 
     if not files:
         print("⚠️  No data files found")

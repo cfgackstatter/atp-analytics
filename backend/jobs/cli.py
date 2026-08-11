@@ -7,12 +7,12 @@ import json
 import logging
 import sys
 
-from backend.jobs.runner import run_job
+from backend.jobs.runner import HANDLERS, run_job
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run an ATP Analytics scrape job")
-    parser.add_argument("job_type", choices=sorted(["rankings", "tournaments", "players"]))
+    parser.add_argument("job_type", choices=sorted(HANDLERS))
     parser.add_argument(
         "params_json",
         help="JSON object of job parameters",

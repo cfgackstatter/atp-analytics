@@ -129,7 +129,6 @@ def _scrape_player(page: Page, player_id: str, player_slug: str) -> dict:
         url,
         selector=BIO_SELECTOR,
         js=_BIO_ITEMS_JS,
-        max_retries=1,
     )
     data = items_to_bio(items or [])
     logger.info("Scraped player %s: %s", player_id, data)

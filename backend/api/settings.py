@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 
-from backend.api.https_redirect import force_https_enabled
-
 
 def _env_flag(name: str) -> str | None:
     raw = os.getenv(name)
@@ -24,6 +22,11 @@ def flag_enabled(name: str, *, default: bool = False) -> bool:
     if raw in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def force_https_enabled() -> bool:
+    """Return True when FORCE_HTTPS is truthy (set in production)."""
+    return flag_enabled("FORCE_HTTPS", default=False)
 
 
 def cors_origins() -> list[str]:

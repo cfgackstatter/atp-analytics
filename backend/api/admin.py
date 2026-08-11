@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -181,7 +180,6 @@ def test_playwright():
         return {
             "status": "error",
             "error": str(e),
-            "trace": traceback.format_exc(),
         }
 
 

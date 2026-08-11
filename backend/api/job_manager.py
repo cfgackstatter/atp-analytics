@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Repo root (…/atp-analytics) so ``python -m backend.jobs.cli`` can import the package.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_MAX_COMPLETED_JOBS = 50
 
 _lock = threading.Lock()
 active_jobs: dict[str, dict[str, Any]] = {}
@@ -63,6 +65,8 @@ def _finish_locked(job_id: str, **meta: Any) -> None:
             **meta,
         }
     )
+    if len(completed_jobs) > _MAX_COMPLETED_JOBS:
+        del completed_jobs[:-_MAX_COMPLETED_JOBS]
 
 
 def _parse_child_payload(stdout: str, stderr: str, exit_code: int) -> dict[str, Any]:
@@ -89,17 +93,23 @@ def _run_worker(job_id: str, job_type: str, params: dict[str, Any]) -> None:
         job_type,
         json.dumps(params),
     ]
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
     try:
         logger.info("Starting scrape subprocess job_id=%s cmd=%s", job_id, cmd)
+        # Capture stdout for the JSON result line; inherit stderr so scrape
+        # progress shows up in uvicorn / EB logs.
         completed = subprocess.run(
             cmd,
             cwd=_PROJECT_ROOT,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=None,
             text=True,
             check=False,
+            env=env,
         )
         payload = _parse_child_payload(
-            completed.stdout, completed.stderr, completed.returncode
+            completed.stdout or "", "", completed.returncode
         )
         with _lock:
             if payload.get("ok"):
@@ -110,12 +120,11 @@ def _run_worker(job_id: str, job_type: str, params: dict[str, Any]) -> None:
                     status="failed",
                     error=payload.get("error") or "Unknown scrape error",
                 )
-                if completed.stderr:
-                    logger.error(
-                        "Scrape stderr job_id=%s:\n%s",
-                        job_id,
-                        completed.stderr[-4000:],
-                    )
+                logger.error(
+                    "Scrape failed job_id=%s exit=%s",
+                    job_id,
+                    completed.returncode,
+                )
     except Exception as exc:
         logger.exception("Job manager failed for %s", job_id)
         with _lock:

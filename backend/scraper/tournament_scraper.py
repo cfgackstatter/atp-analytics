@@ -9,14 +9,9 @@ from datetime import datetime
 
 import polars as pl
 from playwright.async_api import Page as AsyncPage
-from playwright.sync_api import Page
 
 from backend.scraper.config import MONTH_MAP, RESULTS_ARCHIVE_URL, VALID_TOURNAMENT_TYPES
-from backend.scraper.http_utils import (
-    async_goto_and_extract,
-    goto_and_extract,
-    owned_page,
-)
+from backend.scraper.http_utils import async_goto_and_extract
 from backend.scraper.player_utils import extract_player_id
 from backend.scraper.schemas import TOURNAMENTS_SCHEMA
 from backend.scraper.soft_fail import soft_fail
@@ -146,48 +141,17 @@ def year_type_already_complete(
     return len(winners) > 0
 
 
-def scrape_tournaments(
-    year: int,
-    tournament_type: str = "atp",
-    context=None,
-    page: Page | None = None,
-) -> pl.DataFrame:
-    """Scrape tournaments for a specific year and type. Soft-fails to empty."""
-    if tournament_type not in VALID_TOURNAMENT_TYPES:
-        raise ValueError(
-            f"Invalid tournament type: {tournament_type}. "
-            f"Must be one of {VALID_TOURNAMENT_TYPES}"
-        )
-
-    url = tournament_archive_url(year, tournament_type)
-
-    try:
-        with owned_page(context, page) as p:
-            rows = goto_and_extract(
-                p,
-                url,
-                selector=EVENTS_SELECTOR,
-                js=_EVENTS_JS,
-            )
-    except Exception as exc:
-        return soft_fail(
-            logger,
-            f"tournaments {tournament_type} {year}",
-            exc,
-            lambda: pl.DataFrame(schema=TOURNAMENTS_SCHEMA),
-        )
-
-    df = rows_to_dataframe(rows or [], year, tournament_type)
-    logger.info("Scraped %s tournaments for %s %s", len(df), tournament_type, year)
-    return df
-
-
 async def async_scrape_tournaments(
     page: AsyncPage,
     year: int,
     tournament_type: str,
 ) -> pl.DataFrame:
     """Async tournament scrape; soft-fails to empty."""
+    if tournament_type not in VALID_TOURNAMENT_TYPES:
+        raise ValueError(
+            f"Invalid tournament type: {tournament_type}. "
+            f"Must be one of {VALID_TOURNAMENT_TYPES}"
+        )
     url = tournament_archive_url(year, tournament_type)
     try:
         rows = await async_goto_and_extract(

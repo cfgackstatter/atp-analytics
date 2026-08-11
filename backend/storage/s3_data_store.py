@@ -1,14 +1,19 @@
 # backend/storage/s3_data_store.py
 """Data storage utilities with S3 backend."""
 
-import polars as pl
-import boto3
-import os
-from pathlib import Path
-from io import BytesIO
+from __future__ import annotations
+
 import logging
-from botocore.client import BaseClient
+import os
+from io import BytesIO
+from pathlib import Path
 from typing import Optional
+
+import boto3
+import polars as pl
+from botocore.client import BaseClient
+
+from backend.scraper.config import BIO_PRESENT_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +21,20 @@ logger = logging.getLogger(__name__)
 BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "atp-analytics-data")
 USE_S3 = os.getenv("USE_S3", "true").lower() == "true"
 LOCAL_DATA_DIR = Path("data")
-LOCAL_DATA_DIR.mkdir(exist_ok=True)
 
-# Initialize S3 client (only if using S3)
-s3_client: Optional[BaseClient] = boto3.client("s3") if USE_S3 else None
+_s3_client: Optional[BaseClient] = None
+
+
+def _ensure_local_data_dir() -> Path:
+    LOCAL_DATA_DIR.mkdir(exist_ok=True)
+    return LOCAL_DATA_DIR
+
+
+def _get_s3_client() -> BaseClient:
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client("s3")
+    return _s3_client
 
 
 def _get_s3_key(filename: str) -> str:
@@ -30,25 +45,20 @@ def _get_s3_key(filename: str) -> str:
 def save_data(df: pl.DataFrame, filename: str) -> None:
     """Save DataFrame to parquet (S3 or local)."""
     if USE_S3:
-        assert s3_client is not None
-
-        # Write to bytes buffer
+        client = _get_s3_client()
         buffer = BytesIO()
         df.write_parquet(buffer)
         buffer.seek(0)
-
-        # Upload to S3
         s3_key = _get_s3_key(filename)
-        s3_client.put_object(
+        client.put_object(
             Bucket=BUCKET_NAME,
             Key=s3_key,
-            Body=buffer.getvalue(),
-            ContentType="application/octet-stream"
+            Body=buffer,
+            ContentType="application/octet-stream",
         )
         logger.info(f"Saved {filename} to S3: s3://{BUCKET_NAME}/{s3_key}")
     else:
-        # Save locally
-        path = LOCAL_DATA_DIR / filename
+        path = _ensure_local_data_dir() / filename
         df.write_parquet(path)
         logger.info(f"Saved {filename} locally: {path}")
 
@@ -56,21 +66,18 @@ def save_data(df: pl.DataFrame, filename: str) -> None:
 def load_data(filename: str) -> pl.DataFrame:
     """Load DataFrame from parquet (S3 or local)."""
     if USE_S3:
-        assert s3_client is not None
-
+        client = _get_s3_client()
         s3_key = _get_s3_key(filename)
         try:
-            # Download from S3
-            response = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+            response = client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
             buffer = BytesIO(response["Body"].read())
             df = pl.read_parquet(buffer)
             logger.info(f"Loaded {filename} from S3")
             return df
-        except s3_client.exceptions.NoSuchKey:
-            raise FileNotFoundError(f"s3://{BUCKET_NAME}/{s3_key}")
+        except client.exceptions.NoSuchKey:
+            raise FileNotFoundError(f"s3://{BUCKET_NAME}/{s3_key}") from None
     else:
-        # Load locally
-        path = LOCAL_DATA_DIR / filename
+        path = _ensure_local_data_dir() / filename
         if not path.exists():
             raise FileNotFoundError(str(path))
         return pl.read_parquet(path)
@@ -87,13 +94,12 @@ def load_data_or_empty(filename: str, schema: dict) -> pl.DataFrame:
 def upsert_data(
     new_df: pl.DataFrame,
     existing_df: pl.DataFrame,
-    unique_cols: list[str]
+    unique_cols: list[str],
 ) -> pl.DataFrame:
     """Combine and deduplicate data."""
     return pl.concat([existing_df, new_df]).unique(subset=unique_cols, keep="last")
 
 
-# Convenience functions for specific data types
 def save_rankings(df: pl.DataFrame, ranking_type: str) -> None:
     """Save rankings data."""
     save_data(df, f"{ranking_type}_rankings.parquet")
@@ -149,7 +155,6 @@ def get_data_summary() -> dict:
         "use_s3": USE_S3,
     }
 
-    # Singles Rankings
     try:
         df = load_data("singles_rankings.parquet")
         min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
@@ -159,12 +164,11 @@ def get_data_summary() -> dict:
             "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
             "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
             "latest_date": max_date,
-            "size": f"{df.estimated_size('mb'):.2f} MB"
+            "size": f"{df.estimated_size('mb'):.2f} MB",
         }
     except FileNotFoundError:
         summary["rankings_singles"] = None
 
-    # Doubles Rankings
     try:
         df = load_data("doubles_rankings.parquet")
         min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
@@ -174,35 +178,31 @@ def get_data_summary() -> dict:
             "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
             "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
             "latest_date": max_date,
-            "size": f"{df.estimated_size('mb'):.2f} MB"
+            "size": f"{df.estimated_size('mb'):.2f} MB",
         }
     except FileNotFoundError:
         summary["rankings_doubles"] = None
 
-    # Players
     try:
         df = load_data("players.parquet")
-
-        # Count players with bio data (at least one bio field filled)
-        bio_fields = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
+        present = [f for f in BIO_PRESENT_FIELDS if f in df.columns]
         has_bio = df.select(
-            pl.any_horizontal([pl.col(field).is_not_null() for field in bio_fields if field in df.columns])
-        ).to_series()
+            pl.any_horizontal([pl.col(field).is_not_null() for field in present])
+        ).to_series() if present else pl.Series([], dtype=pl.Boolean)
 
-        with_bio = has_bio.sum() if len(has_bio) > 0 else 0
+        with_bio = int(has_bio.sum()) if len(has_bio) > 0 else 0
         missing_bio = len(df) - with_bio
 
-        # Count unique countries (use "country" column, not "country_code")
         countries = 0
         if "country" in df.columns:
             countries = df.select(pl.col("country").drop_nulls().n_unique()).item()
 
         summary["players"] = {
             "count": len(df),
-            "with_bio": int(with_bio),
-            "missing_bio": int(missing_bio),
+            "with_bio": with_bio,
+            "missing_bio": missing_bio,
             "countries": countries,
-            "size": f"{df.estimated_size('mb'):.2f} MB"
+            "size": f"{df.estimated_size('mb'):.2f} MB",
         }
     except FileNotFoundError:
         summary["players"] = None
@@ -210,7 +210,6 @@ def get_data_summary() -> dict:
         logger.error(f"Error processing players data: {e}")
         summary["players"] = {"error": str(e)}
 
-    # Tournaments
     try:
         df = load_data("tournaments.parquet")
 
@@ -225,15 +224,17 @@ def get_data_summary() -> dict:
             tournament_types = df.select(pl.col("tournament_type").unique()).to_series().to_list()
 
         with_winners = 0
-        if "winner_name" in df.columns:
-            with_winners = df.select(pl.col("winner_name").is_not_null().sum()).item()
+        if "singles_winner_name" in df.columns:
+            with_winners = df.select(pl.col("singles_winner_name").is_not_null().sum()).item()
+        elif "singles_winner_id" in df.columns:
+            with_winners = df.select(pl.col("singles_winner_id").is_not_null().sum()).item()
 
         summary["tournaments"] = {
             "count": len(df),
             "year_range": year_range,
             "types": tournament_types,
             "with_winners": with_winners,
-            "size": f"{df.estimated_size('mb'):.2f} MB"
+            "size": f"{df.estimated_size('mb'):.2f} MB",
         }
     except FileNotFoundError:
         summary["tournaments"] = None

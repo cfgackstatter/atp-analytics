@@ -19,6 +19,8 @@ from backend.api.admin import router as admin_router
 from backend.api.errors import http_internal_error
 from backend.api.https_redirect import HTTPSRedirectMiddleware
 from backend.api.settings import cors_origins, docs_enabled
+from backend.scraper.config import BIO_PRESENT_FIELDS
+from backend.scraper.schemas import PLAYERS_SCHEMA, RANKINGS_SCHEMA, TOURNAMENTS_SCHEMA
 from backend.storage.s3_data_store import (
     load_doubles_rankings,
     load_players,
@@ -77,9 +79,8 @@ def health_check():
 def search_players(q: str = Query(..., min_length=1)):
     """Search for players by name."""
     try:
-        players_df = load_players()
-
-        if players_df is None or len(players_df) == 0:
+        players_df = load_players(schema=PLAYERS_SCHEMA)
+        if len(players_df) == 0:
             return []
 
         mask = players_df["player_name"].str.to_lowercase().str.contains(q.lower())
@@ -99,11 +100,11 @@ def get_stored_rankings(
     """Get stored ranking history."""
     try:
         if ranking_type == "singles":
-            df = load_singles_rankings()
+            df = load_singles_rankings(schema=RANKINGS_SCHEMA)
         else:
-            df = load_doubles_rankings()
+            df = load_doubles_rankings(schema=RANKINGS_SCHEMA)
 
-        if df is None or len(df) == 0:
+        if len(df) == 0:
             return []
 
         if player_ids:
@@ -131,9 +132,8 @@ def get_tournaments(
 ):
     """Get tournament data."""
     try:
-        df = load_tournaments()
-
-        if df is None or len(df) == 0:
+        df = load_tournaments(schema=TOURNAMENTS_SCHEMA)
+        if len(df) == 0:
             return []
 
         if year:
@@ -155,8 +155,8 @@ def get_players(
 ):
     """Get all players with optional filtering."""
     try:
-        players_df = load_players()
-        if players_df is None or len(players_df) == 0:
+        players_df = load_players(schema=PLAYERS_SCHEMA)
+        if len(players_df) == 0:
             return []
 
         if country:
@@ -164,24 +164,17 @@ def get_players(
             players_df = players_df.filter(mask)
 
         if has_bio is not None:
-            bio_fields = ["birthdate", "weight_kg", "height_cm", "country", "handedness"]
-            if has_bio:
-                mask = pl.any_horizontal(
-                    [
-                        pl.col(field).is_not_null()
-                        for field in bio_fields
-                        if field in players_df.columns
-                    ]
-                )
-            else:
-                mask = pl.all_horizontal(
-                    [
-                        pl.col(field).is_null()
-                        for field in bio_fields
-                        if field in players_df.columns
-                    ]
-                )
-            players_df = players_df.filter(mask)
+            present = [f for f in BIO_PRESENT_FIELDS if f in players_df.columns]
+            if present:
+                if has_bio:
+                    mask = pl.any_horizontal(
+                        [pl.col(field).is_not_null() for field in present]
+                    )
+                else:
+                    mask = pl.all_horizontal(
+                        [pl.col(field).is_null() for field in present]
+                    )
+                players_df = players_df.filter(mask)
 
         players_df = players_df.head(limit)
         return players_df.to_dicts()

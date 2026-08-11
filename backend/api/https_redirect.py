@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import os
-
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
-
-def force_https_enabled() -> bool:
-    """Return True when FORCE_HTTPS is truthy (set in production)."""
-    return os.getenv("FORCE_HTTPS", "").strip().lower() in {"1", "true", "yes", "on"}
+from backend.api.settings import force_https_enabled
 
 
 def request_is_https(request: Request) -> bool:

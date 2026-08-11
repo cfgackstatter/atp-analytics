@@ -79,3 +79,12 @@ BIO_COLUMNS = [
     "backhand",
     "coach",
 ]
+
+# Fields used to decide whether a player "has bio" / needs a scrape.
+BIO_PRESENT_FIELDS = [
+    "birthdate",
+    "weight_kg",
+    "height_cm",
+    "country",
+    "handedness",
+]

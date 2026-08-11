@@ -9,9 +9,11 @@ FROM mcr.microsoft.com/playwright/python:v1.62.0-jammy
 
 WORKDIR /app
 
-# Install Python dependencies
+ENV PYTHONUNBUFFERED=1
+
+# Install Python dependencies (includes gunicorn / uvicorn)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn uvicorn
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Official Playwright image already ships browsers; keep path consistent.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
