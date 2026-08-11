@@ -152,7 +152,9 @@ function RankingsChart({
     'All': () => new Date(0),
   };
 
-  const rangeStart = ranges[activeRange]();
+  // Age mode overlays full careers; calendar windows (1Y, etc.) just shift
+  // each player to a different age band with little/no overlap.
+  const rangeStart = byAge ? ranges.All() : ranges[activeRange]();
 
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
   const birthdateByPlayer = Object.fromEntries(
@@ -576,7 +578,7 @@ function RankingsChart({
     return (
       <div className="py-10 text-center text-gray-600">
         {byAge
-          ? 'No ranking points to plot by age for the selected players in this range.'
+          ? 'No ranking points to plot by age for the selected players.'
           : 'No ranking points to plot in this range.'}
       </div>
     );
@@ -584,21 +586,27 @@ function RankingsChart({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-1 justify-end">
-        {Object.keys(ranges).map(range => (
-          <button
-            key={range}
-            onClick={() => setActiveRange(range)}
-            className={`px-3 py-1 text-sm rounded ${
-              activeRange === range
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {range}
-          </button>
-        ))}
-      </div>
+      {byAge ? (
+        <p className="text-sm text-gray-500 text-right">
+          Full careers overlaid by age (date ranges apply in Date view).
+        </p>
+      ) : (
+        <div className="flex gap-1 justify-end">
+          {Object.keys(ranges).map(range => (
+            <button
+              key={range}
+              onClick={() => setActiveRange(range)}
+              className={`px-3 py-1 text-sm rounded ${
+                activeRange === range
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ height: '400px' }}>
         <Line data={chartData} options={options} />
