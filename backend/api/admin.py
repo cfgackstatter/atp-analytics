@@ -10,9 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from backend.api.auth import require_admin
-from backend.api.job_manager import get_job, list_jobs, submit_job
+from backend.api.job_manager import get_job, is_busy, list_jobs, submit_job
 from backend.api.rate_limit import rate_limit_admin
-from backend.scraper.config import VALID_TOURNAMENT_TYPES
+from backend.scraper.config import (
+    PLAYER_SCRAPE_COOLDOWN_DAYS,
+    SCRAPE_CONCURRENCY,
+    VALID_TOURNAMENT_TYPES,
+    playwright_single_process,
+)
 from backend.storage.s3_data_store import get_data_summary
 
 logger = logging.getLogger(__name__)
@@ -47,6 +52,12 @@ def get_summary():
     try:
         summary = get_data_summary()
         summary["timestamp"] = _now_iso()
+        summary["system"] = {
+            "scrape_concurrency": SCRAPE_CONCURRENCY,
+            "playwright_single_process": playwright_single_process(),
+            "player_scrape_cooldown_days": PLAYER_SCRAPE_COOLDOWN_DAYS,
+            "scrape_busy": is_busy(),
+        }
         return summary
     except Exception as e:
         logger.exception("Error getting data summary")

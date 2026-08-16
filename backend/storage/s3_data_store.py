@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -157,38 +158,26 @@ def get_data_summary() -> dict:
 
     try:
         df = load_data("singles_rankings.parquet")
-        min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
-        max_date = df.select(pl.col("date").max()).item() if "date" in df.columns else None
-        summary["rankings_singles"] = {
-            "count": len(df),
-            "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
-            "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
-            "latest_date": max_date,
-            "size": f"{df.estimated_size('mb'):.2f} MB",
-        }
+        summary["rankings_singles"] = _ranking_summary(df)
     except FileNotFoundError:
         summary["rankings_singles"] = None
 
     try:
         df = load_data("doubles_rankings.parquet")
-        min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
-        max_date = df.select(pl.col("date").max()).item() if "date" in df.columns else None
-        summary["rankings_doubles"] = {
-            "count": len(df),
-            "unique_players": df.select(pl.col("player_id").n_unique()).item() if "player_id" in df.columns else 0,
-            "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
-            "latest_date": max_date,
-            "size": f"{df.estimated_size('mb'):.2f} MB",
-        }
+        summary["rankings_doubles"] = _ranking_summary(df)
     except FileNotFoundError:
         summary["rankings_doubles"] = None
 
     try:
         df = load_data("players.parquet")
         present = [f for f in BIO_PRESENT_FIELDS if f in df.columns]
-        has_bio = df.select(
-            pl.any_horizontal([pl.col(field).is_not_null() for field in present])
-        ).to_series() if present else pl.Series([], dtype=pl.Boolean)
+        has_bio = (
+            df.select(
+                pl.any_horizontal([pl.col(field).is_not_null() for field in present])
+            ).to_series()
+            if present
+            else pl.Series([], dtype=pl.Boolean)
+        )
 
         with_bio = int(has_bio.sum()) if len(has_bio) > 0 else 0
         missing_bio = len(df) - with_bio
@@ -197,10 +186,22 @@ def get_data_summary() -> dict:
         if "country" in df.columns:
             countries = df.select(pl.col("country").drop_nulls().n_unique()).item()
 
+        with_birthdate = 0
+        if "birthdate" in df.columns:
+            with_birthdate = int(
+                df.select(pl.col("birthdate").is_not_null().sum()).item()
+            )
+
         summary["players"] = {
             "count": len(df),
             "with_bio": with_bio,
             "missing_bio": missing_bio,
+            "bio_coverage_pct": round(100.0 * with_bio / len(df), 1) if len(df) else 0,
+            "with_birthdate": with_birthdate,
+            "missing_birthdate": len(df) - with_birthdate,
+            "birthdate_coverage_pct": (
+                round(100.0 * with_birthdate / len(df), 1) if len(df) else 0
+            ),
             "countries": countries,
             "size": f"{df.estimated_size('mb'):.2f} MB",
         }
@@ -220,23 +221,71 @@ def get_data_summary() -> dict:
             year_range = f"{min_year}-{max_year}"
 
         tournament_types = []
+        counts_by_type: dict[str, int] = {}
         if "tournament_type" in df.columns:
-            tournament_types = df.select(pl.col("tournament_type").unique()).to_series().to_list()
+            tournament_types = (
+                df.select(pl.col("tournament_type").unique()).to_series().to_list()
+            )
+            for row in (
+                df.group_by("tournament_type")
+                .len()
+                .sort("tournament_type")
+                .iter_rows(named=True)
+            ):
+                counts_by_type[str(row["tournament_type"])] = int(row["len"])
 
         with_winners = 0
         if "singles_winner_name" in df.columns:
-            with_winners = df.select(pl.col("singles_winner_name").is_not_null().sum()).item()
+            with_winners = df.select(
+                pl.col("singles_winner_name").is_not_null().sum()
+            ).item()
         elif "singles_winner_id" in df.columns:
-            with_winners = df.select(pl.col("singles_winner_id").is_not_null().sum()).item()
+            with_winners = df.select(
+                pl.col("singles_winner_id").is_not_null().sum()
+            ).item()
 
         summary["tournaments"] = {
             "count": len(df),
             "year_range": year_range,
             "types": tournament_types,
+            "counts_by_type": counts_by_type,
             "with_winners": with_winners,
+            "winner_coverage_pct": (
+                round(100.0 * with_winners / len(df), 1) if len(df) else 0
+            ),
             "size": f"{df.estimated_size('mb'):.2f} MB",
         }
     except FileNotFoundError:
         summary["tournaments"] = None
 
     return summary
+
+
+def _ranking_summary(df: pl.DataFrame) -> dict:
+    min_date = df.select(pl.col("date").min()).item() if "date" in df.columns else None
+    max_date = df.select(pl.col("date").max()).item() if "date" in df.columns else None
+    unique_weeks = (
+        df.select(pl.col("date").n_unique()).item() if "date" in df.columns else 0
+    )
+    unique_players = (
+        df.select(pl.col("player_id").n_unique()).item()
+        if "player_id" in df.columns
+        else 0
+    )
+    stale_days = None
+    if max_date:
+        try:
+            latest = datetime.strptime(str(max_date)[:10], "%Y-%m-%d").date()
+            stale_days = (datetime.now(timezone.utc).date() - latest).days
+        except ValueError:
+            stale_days = None
+
+    return {
+        "count": len(df),
+        "unique_players": unique_players,
+        "unique_weeks": unique_weeks,
+        "date_range": f"{min_date} to {max_date}" if min_date and max_date else None,
+        "latest_date": max_date,
+        "stale_days": stale_days,
+        "size": f"{df.estimated_size('mb'):.2f} MB",
+    }

@@ -1,696 +1,684 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATP Analytics - Admin Dashboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
-            padding: 15px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-size: 28px;
-        }
-
-        .subtitle {
-            color: #7f8c8d;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        /* Password Section - More Compact */
-        .password-section {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-
-        .password-section h2 {
-            font-size: 16px;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-
-        .password-input-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .password-input-group input {
-            flex: 1;
-            max-width: 300px;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .password-status {
-            font-size: 13px;
-            color: #27ae60;
-        }
-
-        /* Grid Layout for Sections */
-        .sections-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .section {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .section h2 {
-            color: #2c3e50;
-            margin-bottom: 12px;
-            font-size: 18px;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 8px;
-        }
-
-        .form-group {
-            margin-bottom: 12px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            font-size: 13px;
-            color: #555;
-        }
-
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        /* ✅ FIX: Checkbox alignment */
-        .checkbox-group {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            margin-top: 5px;
-        }
-
-        .checkbox-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .checkbox-item input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            margin: 0;
-            cursor: pointer;
-        }
-
-        .checkbox-item label {
-            margin: 0;
-            font-size: 13px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        button {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: background 0.2s;
-        }
-
-        button:hover {
-            background: #2980b9;
-        }
-
-        button:disabled {
-            background: #95a5a6;
-            cursor: not-allowed;
-        }
-
-        /* Data Summary - More Compact */
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 12px;
-            margin-top: 10px;
-        }
-
-        .summary-card {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 6px;
-            border-left: 4px solid #3498db;
-        }
-
-        .summary-card h3 {
-            font-size: 14px;
-            color: #2c3e50;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-
-        .summary-info {
-            font-size: 12px;
-            color: #555;
-            line-height: 1.5;
-        }
-
-        .summary-info strong {
-            color: #2c3e50;
-        }
-
-        /* Job Status */
-        .job-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .job-item {
-            background: #f8f9fa;
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            border-left: 4px solid #3498db;
-            font-size: 13px;
-        }
-
-        .job-item.running {
-            border-left-color: #f39c12;
-            background: #fff8e1;
-        }
-
-        .job-item.completed {
-            border-left-color: #27ae60;
-            background: #e8f5e9;
-        }
-
-        .job-item.failed {
-            border-left-color: #e74c3c;
-            background: #ffebee;
-        }
-
-        .job-header {
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-
-        .job-details {
-            font-size: 12px;
-            color: #666;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .status-running { background: #fff3cd; color: #856404; }
-        .status-completed { background: #d4edda; color: #155724; }
-        .status-failed { background: #f8d7da; color: #721c24; }
-
-        .empty-state {
-            text-align: center;
-            padding: 30px;
-            color: #95a5a6;
-            font-size: 14px;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .sections-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .summary-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .help-text {
-            font-size: 12px;
-            color: #7f8c8d;
-            margin-top: 4px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>TennisRank Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --court: #1a5c45; --court-ink: #0f3d2e; --court-soft: #e7f1ec;
+      --page: #f3f6f4; --page-deep: #e8eeea; --surface: #fff;
+      --ink: #14231c; --muted: #5a6d64; --line: #d2ddd7;
+      --warn-ink: #6b4e16; --danger: #9a031e; --danger-bg: #fdecee;
+      --ok-bg: #e8f5ef; --ok-ink: #0f3d2e; --run-bg: #fff6e8; --run-ink: #8a5a00;
+      --font-display: "Fraunces", "Iowan Old Style", Palatino, serif;
+      --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--font-sans); color: var(--ink); background: var(--page);
+      background-image:
+        radial-gradient(ellipse 90% 55% at 100% -10%, rgba(26,92,69,.07), transparent 55%),
+        linear-gradient(180deg, var(--page), var(--page-deep));
+      -webkit-font-smoothing: antialiased;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+    .shell { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+    header.app-header {
+      display: flex; align-items: center; gap: .75rem 1rem; flex-wrap: wrap;
+      padding: .4rem .75rem; border-bottom: 1px solid var(--line); background: var(--surface); flex-shrink: 0;
+    }
+    .brand { display: flex; align-items: center; gap: .45rem; min-width: 0; }
+    .brand svg { height: 1.55rem; width: auto; color: var(--court); flex-shrink: 0; }
+    .brand h1 { font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; letter-spacing: -.02em; color: var(--court-ink); line-height: 1.1; }
+    .brand p { display: none; }
+    .header-auth { display: flex; align-items: center; gap: .45rem; flex: 1; min-width: 12rem; }
+    .header-auth input {
+      flex: 1; max-width: 15rem; padding: .3rem .5rem; border: 1px solid var(--line); border-radius: 5px;
+      font: inherit; font-size: .78rem; outline: none; background: var(--surface);
+    }
+    .header-auth input:focus { border-color: var(--court); box-shadow: 0 0 0 2px color-mix(in srgb, var(--court) 20%, transparent); }
+    .auth-status { font-size: .7rem; color: var(--muted); white-space: nowrap; }
+    .auth-status.ok { color: var(--court); font-weight: 600; }
+    .auth-status.bad { color: var(--danger); font-weight: 600; }
+    .header-actions { display: flex; align-items: center; gap: .3rem; margin-left: auto; }
+    .header-actions a, .header-actions button.linkish {
+      font-size: .72rem; color: var(--court); text-decoration: none; background: none; border: none;
+      cursor: pointer; font-family: inherit; padding: .15rem .3rem;
+    }
+    .header-actions a:hover, .header-actions button.linkish:hover { text-decoration: underline; }
+    main {
+      flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .4rem;
+      padding: .45rem .75rem .5rem; width: 100%; max-width: 1400px; margin: 0 auto;
+    }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; flex-shrink: 0; }
+    .stat {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+      padding: .28rem .5rem; display: flex; align-items: baseline; gap: .4rem; min-width: 0;
+    }
+    .stat .label { font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); flex-shrink: 0; }
+    .stat .value { font-family: var(--font-display); font-size: .9rem; font-weight: 600; color: var(--court-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stat .sub { font-size: .65rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .stat.warn .value { color: var(--warn-ink); }
+    .stat.danger .value { color: var(--danger); }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; flex-shrink: 0; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+      padding: .45rem .55rem; display: flex; flex-direction: column; gap: .32rem; min-width: 0;
+    }
+    .panel.grow { flex: 1; min-height: 0; }
+    .panel h2 { font-family: var(--font-display); font-size: .82rem; font-weight: 600; color: var(--court-ink); padding-bottom: .25rem; border-bottom: 1px solid var(--line); }
+    .form-group { display: flex; flex-direction: column; gap: .12rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; }
+    .form-group > label { font-size: .65rem; font-weight: 600; color: var(--muted); }
+    input[type="number"], select {
+      width: 100%; padding: .25rem .4rem; border: 1px solid var(--line); border-radius: 4px;
+      font: inherit; font-size: .78rem; color: var(--ink); background: var(--surface); outline: none;
+    }
+    input:focus, select:focus { border-color: var(--court); box-shadow: 0 0 0 2px color-mix(in srgb, var(--court) 20%, transparent); }
+    .help { font-size: .65rem; color: var(--muted); line-height: 1.25; }
+    .checks { display: flex; flex-wrap: wrap; gap: .2rem .55rem; }
+    .check { display: flex; align-items: center; gap: .25rem; font-size: .72rem; cursor: pointer; }
+    .check input { width: .8rem; height: .8rem; accent-color: var(--court); cursor: pointer; }
+    .btn {
+      appearance: none; border: none; border-radius: 4px; padding: .28rem .55rem; font: inherit;
+      font-size: .72rem; font-weight: 600; cursor: pointer; background: var(--court); color: #fff; align-self: start;
+    }
+    .btn:hover { background: var(--court-ink); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn.secondary { background: var(--surface); color: var(--court-ink); border: 1px solid var(--line); }
+    .btn.secondary:hover { background: var(--court-soft); }
+    .btn-row { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+    .bottom { display: grid; grid-template-columns: 1.35fr 1fr; gap: .4rem; flex: 1; min-height: 0; }
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: .3rem;
+      overflow: auto; min-height: 0; flex: 1; align-content: start;
+    }
+    .summary-card { background: var(--page); border: 1px solid var(--line); border-radius: 5px; padding: .35rem .45rem; border-left: 2px solid var(--court); }
+    .summary-card h3 { font-size: .7rem; font-weight: 700; color: var(--court-ink); margin-bottom: .18rem; }
+    .summary-card dl { display: grid; grid-template-columns: auto 1fr; gap: 0 .35rem; font-size: .66rem; }
+    .summary-card dt { color: var(--muted); }
+    .summary-card dd { color: var(--ink); font-weight: 500; text-align: right; }
+    .job-list { display: flex; flex-direction: column; gap: .25rem; overflow: auto; min-height: 0; flex: 1; }
+    .job { border: 1px solid var(--line); border-radius: 5px; padding: .32rem .42rem; border-left: 2px solid var(--line); background: var(--page); font-size: .72rem; }
+    .job.running { border-left-color: var(--run-ink); background: var(--run-bg); }
+    .job.completed { border-left-color: var(--court); background: var(--ok-bg); }
+    .job.failed { border-left-color: var(--danger); background: var(--danger-bg); }
+    .job-top { display: flex; flex-wrap: wrap; gap: .2rem .35rem; align-items: center; margin-bottom: .05rem; font-weight: 600; font-size: .72rem; }
+    .badge { display: inline-block; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: .08rem .3rem; border-radius: 3px; background: var(--line); }
+    .badge.running { background: #ffe2a8; color: var(--run-ink); }
+    .badge.completed { background: #c6e8d7; color: var(--ok-ink); }
+    .badge.failed { background: #f7c4cb; color: var(--danger); }
+    .job-meta { font-size: .64rem; color: var(--muted); line-height: 1.3; }
+    .job-error { margin-top: .15rem; color: var(--danger); font-size: .64rem; }
+    .empty { text-align: center; padding: .55rem .4rem; color: var(--muted); font-size: .74rem; }
+    .system-list { display: grid; grid-template-columns: auto 1fr; gap: .05rem .4rem; font-size: .68rem; }
+    .system-list dt { color: var(--muted); }
+    .system-list dd { font-weight: 500; text-align: right; }
+    .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: .4rem; padding-bottom: .25rem; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { border: none; padding: 0; }
+    .toast-host { position: fixed; right: .65rem; bottom: .65rem; z-index: 50; display: flex; flex-direction: column; gap: .3rem; max-width: min(20rem, calc(100vw - 1.2rem)); }
+    .toast { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--court); border-radius: 5px; padding: .45rem .6rem; font-size: .74rem; animation: toast-in 120ms ease-out; }
+    .toast.error { border-left-color: var(--danger); }
+    .toast .toast-title { font-weight: 700; margin-bottom: .05rem; color: var(--court-ink); }
+    .toast.error .toast-title { color: var(--danger); }
+    .toast .toast-body { color: var(--muted); white-space: pre-wrap; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .shell { height: auto; min-height: 100dvh; overflow: visible; }
+      .grid, .stats-row, .bottom { grid-template-columns: 1fr; }
+      .bottom { flex: none; }
+      .summary-grid, .job-list { max-height: 16rem; }
+      .brand p { display: block; font-size: .68rem; color: var(--muted); }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎾 ATP Analytics Admin</h1>
-        <p class="subtitle">Manage data updates and monitor scraping jobs</p>
+  <div class="shell">
+    <header class="app-header">
+      <div class="brand">
+        <svg viewBox="0 0 600 220" fill="none" aria-hidden="true">
+          <path d="M60 180 Q100 140 180 160 Q260 180 340 90 Q380 50 420 60 Q470 75 430 130 Q420 145 410 150 Q400 155 395 140 Q390 120 410 110 Q440 95 470 110 Q500 125 520 165 Q530 185 510 200 Q490 215 465 200 Q440 185 450 150 Q460 120 500 120" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M540 70 Q550 60 560 70 Q570 80 560 90 Q550 100 540 90 Q530 80 540 70" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h1>TennisRank Admin</h1>
+          <p>Scrape · data · Playwright</p>
+        </div>
+      </div>
+      <div class="header-auth">
+        <input type="password" id="password" placeholder="Admin password" autocomplete="current-password" aria-label="Admin password">
+        <span class="auth-status" id="passwordStatus">Enter password</span>
+      </div>
+      <div class="header-actions">
+        <a href="/">Public site</a>
+        <button type="button" class="linkish" id="clearSessionBtn" hidden>Clear password</button>
+      </div>
+    </header>
 
-        <!-- Password Section -->
-        <div class="password-section">
-            <h2>🔐 Admin Password</h2>
-            <div class="password-input-group">
-                <input type="password" id="password" placeholder="Enter admin password">
-                <span class="password-status" id="passwordStatus"></span>
+    <main>
+      <section class="stats-row" id="heroStats">
+        <div class="stat"><span class="label">Storage</span><span class="value" id="statStorage">—</span><span class="sub" id="statBucket">—</span></div>
+        <div class="stat" id="statSinglesCard"><span class="label">Singles</span><span class="value" id="statSingles">—</span><span class="sub" id="statSinglesSub">—</span></div>
+        <div class="stat" id="statDoublesCard"><span class="label">Doubles</span><span class="value" id="statDoubles">—</span><span class="sub" id="statDoublesSub">—</span></div>
+        <div class="stat"><span class="label">Queue</span><span class="value" id="statBusy">—</span><span class="sub" id="statBusySub">1 at a time</span></div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <h2>Rankings</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="rankingType">Type</label>
+              <select id="rankingType">
+                <option value="singles">Singles</option>
+                <option value="doubles">Doubles</option>
+              </select>
             </div>
+            <div class="form-group">
+              <label for="maxWeeks">Max weeks</label>
+              <input type="number" id="maxWeeks" value="20" min="1" max="500" title="Backfill 50–100 · catch-up 2–5">
+            </div>
+          </div>
+          <button type="button" class="btn" id="btnRankings">Scrape rankings</button>
         </div>
 
-        <!-- Main Sections Grid -->
-        <div class="sections-grid">
-            <!-- Update Rankings -->
-            <div class="section">
-                <h2>📊 Update Rankings</h2>
-                <div class="form-group">
-                    <label>Ranking Type</label>
-                    <select id="rankingType">
-                        <option value="singles">Singles</option>
-                        <option value="doubles">Doubles</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Max Weeks (1-500)</label>
-                    <input type="number" id="maxWeeks" value="20" min="1" max="500">
-                    <p class="help-text">Initial load: 50-100 weeks. Weekly update: 2-5 weeks.</p>
-                </div>
-                <button onclick="updateRankings()">Update Rankings</button>
+        <div class="panel">
+          <h2>Tournaments</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="startYear">Start</label>
+              <input type="number" id="startYear" value="2020" min="1990" max="2030">
             </div>
-
-            <!-- Update Tournaments -->
-            <div class="section">
-                <h2>🏆 Update Tournaments</h2>
-                <div class="form-group">
-                    <label>Start Year</label>
-                    <input type="number" id="startYear" value="2020" min="1990" max="2030">
-                </div>
-                <div class="form-group">
-                    <label>End Year</label>
-                    <input type="number" id="endYear" value="2025" min="1990" max="2030">
-                </div>
-                <div class="form-group">
-                    <label>Tournament Types</label>
-                    <div class="checkbox-group">
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="type_atp" value="atp" checked>
-                            <label for="type_atp">ATP</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="type_gs" value="gs" checked>
-                            <label for="type_gs">Grand Slam</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="type_ch" value="ch">
-                            <label for="type_ch">Challenger</label>
-                        </div>
-                        <div class="checkbox-item">
-                            <input type="checkbox" id="type_fu" value="fu">
-                            <label for="type_fu">ITF</label>
-                        </div>
-                    </div>
-                </div>
-                <button onclick="updateTournaments()">Update Tournaments</button>
+            <div class="form-group">
+              <label for="endYear">End</label>
+              <input type="number" id="endYear" min="1990" max="2030">
             </div>
-
-            <!-- Update Players -->
-            <div class="section">
-                <h2>👤 Update Players</h2>
-                <div class="form-group">
-                    <label>Number of Players (1-500)</label>
-                    <input type="number" id="numPlayers" value="50" min="1" max="500">
-                    <p class="help-text">Scrapes biographical data for top N players.</p>
-                </div>
-                <button onclick="updatePlayers()">Update Players</button>
-            </div>
+          </div>
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="type_atp" value="atp" checked> ATP</label>
+            <label class="check"><input type="checkbox" id="type_gs" value="gs" checked> GS</label>
+            <label class="check"><input type="checkbox" id="type_ch" value="ch"> CH</label>
+            <label class="check"><input type="checkbox" id="type_fu" value="fu"> ITF</label>
+          </div>
+          <button type="button" class="btn" id="btnTournaments">Scrape tournaments</button>
         </div>
 
-        <!-- Data Summary -->
-        <div class="section">
-            <h2>📈 Data Summary</h2>
-            <button onclick="refreshDataSummary()">Refresh Data Summary</button>
-            <div id="dataSummary" class="summary-grid" style="margin-top: 15px;">
-                <div class="empty-state">Click "Refresh Data Summary" to load stats</div>
-            </div>
+        <div class="panel">
+          <h2>Players</h2>
+          <div class="form-group">
+            <label for="numPlayers">Batch size</label>
+            <input type="number" id="numPlayers" value="50" min="1" max="500" title="Missing bio/DOB, best-ranked first, cooldown applies">
+          </div>
+          <button type="button" class="btn" id="btnPlayers">Scrape players</button>
         </div>
 
-        <!-- Job Status -->
-        <div class="section">
-            <h2>🔄 Job Status</h2>
-            <p class="help-text" style="margin-bottom: 10px;">Auto-refreshes every 5 seconds</p>
-            <div id="jobStatus">
-                <div class="empty-state">Loading jobs...</div>
-            </div>
+        <div class="panel">
+          <h2>System</h2>
+          <dl class="system-list" id="systemList">
+            <dt>Concurrency</dt><dd id="sysConcurrency">—</dd>
+            <dt>Single-process</dt><dd id="sysSingle">—</dd>
+            <dt>Bio cooldown</dt><dd id="sysCooldown">—</dd>
+            <dt>Playwright</dt><dd id="sysPw">—</dd>
+          </dl>
+          <div class="btn-row">
+            <button type="button" class="btn secondary" id="btnPlaywright">Test PW</button>
+            <button type="button" class="btn secondary" id="btnRefreshSummary">Refresh</button>
+          </div>
         </div>
-    </div>
+      </section>
 
-    <script>
-        const API_BASE = window.location.origin;
-        let autoRefreshInterval;
+      <section class="bottom">
+        <div class="panel grow">
+          <div class="panel-head">
+            <h2>Data summary</h2>
+            <span class="help" id="summaryUpdated">—</span>
+          </div>
+          <div id="dataSummary" class="summary-grid">
+            <div class="empty">Enter password to load stats.</div>
+          </div>
+        </div>
+        <div class="panel grow">
+          <div class="panel-head">
+            <h2>Jobs</h2>
+            <span class="help">5s poll</span>
+          </div>
+          <div id="jobStatus" class="job-list">
+            <div class="empty">No jobs yet.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-        function getPassword() {
-            const pwd = document.getElementById('password').value;
-            if (!pwd) {
-                alert('Please enter admin password');
-                return null;
-            }
-            return pwd;
+<div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+<script>
+    const API_BASE = window.location.origin;
+    const PASS_KEY = 'tr_admin_bearer';
+    let jobsTimer = null;
+    let summaryTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    document.getElementById('endYear').value = String(new Date().getFullYear());
+
+    function toast(title, body = '', isError = false) {
+      const el = document.createElement('div');
+      el.className = 'toast' + (isError ? ' error' : '');
+      el.innerHTML = `<div class="toast-title">${escapeHtml(title)}</div>` +
+        (body ? `<div class="toast-body">${escapeHtml(body)}</div>` : '');
+      $('toastHost').appendChild(el);
+      setTimeout(() => el.remove(), 5200);
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function getPassword(required = true) {
+      const pwd = $('password').value.trim();
+      if (!pwd && required) {
+        toast('Password required', 'Enter the admin password to continue.', true);
+        return null;
+      }
+      return pwd || null;
+    }
+
+    function errorDetail(data) {
+      if (!data || data.detail === undefined) return 'Unknown error';
+      return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+    }
+
+    async function adminFetch(path, options = {}) {
+      const password = getPassword();
+      if (!password) return null;
+
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${password}`);
+      if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+
+      const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      let data = null;
+      try { data = await response.json(); } catch (_) { data = null; }
+      return { response, data };
+    }
+
+    function setAuthUi(ok, message) {
+      const status = $('passwordStatus');
+      status.textContent = message;
+      status.className = 'auth-status' + (ok === true ? ' ok' : ok === false ? ' bad' : '');
+      $('clearSessionBtn').hidden = !sessionStorage.getItem(PASS_KEY);
+    }
+
+    function fmtNum(n) {
+      if (n === null || n === undefined) return '—';
+      return Number(n).toLocaleString();
+    }
+
+    function staleClass(days) {
+      if (days === null || days === undefined) return '';
+      if (days > 14) return 'danger';
+      if (days > 7) return 'warn';
+      return '';
+    }
+
+    function staleLabel(days) {
+      if (days === null || days === undefined) return 'unknown age';
+      if (days === 0) return 'updated today';
+      if (days === 1) return '1 day old';
+      return `${days} days old`;
+    }
+
+    function renderHero(data) {
+      $('statStorage').textContent = (data.storage || 'local').toUpperCase();
+      $('statBucket').textContent = data.bucket || '—';
+
+      const s = data.rankings_singles;
+      const d = data.rankings_doubles;
+      $('statSingles').textContent = s?.latest_date ? String(s.latest_date).slice(0, 10) : 'None';
+      $('statSinglesSub').textContent = s
+        ? `${fmtNum(s.unique_weeks)} weeks · ${staleLabel(s.stale_days)}`
+        : 'No singles file';
+      $('statSinglesCard').className = 'stat ' + staleClass(s?.stale_days);
+
+      $('statDoubles').textContent = d?.latest_date ? String(d.latest_date).slice(0, 10) : 'None';
+      $('statDoublesSub').textContent = d
+        ? `${fmtNum(d.unique_weeks)} weeks · ${staleLabel(d.stale_days)}`
+        : 'No doubles file';
+      $('statDoublesCard').className = 'stat ' + staleClass(d?.stale_days);
+
+      const busy = data.system?.scrape_busy;
+      $('statBusy').textContent = busy ? 'Busy' : 'Idle';
+      $('statBusySub').textContent = busy ? 'job running' : 'ready';
+
+      if (data.system) {
+        $('sysConcurrency').textContent = String(data.system.scrape_concurrency ?? '—');
+        $('sysSingle').textContent = data.system.playwright_single_process ? 'On' : 'Off';
+        $('sysCooldown').textContent = `${data.system.player_scrape_cooldown_days ?? '—'}d`;
+      }
+    }
+
+    function rankingCard(title, block) {
+      if (!block) {
+        return `<div class="summary-card"><h3>${title}</h3><p class="help">No file loaded.</p></div>`;
+      }
+      return `<div class="summary-card">
+        <h3>${title}</h3>
+        <dl>
+          <dt>Records</dt><dd>${fmtNum(block.count)}</dd>
+          <dt>Players</dt><dd>${fmtNum(block.unique_players)}</dd>
+          <dt>Weeks</dt><dd>${fmtNum(block.unique_weeks)}</dd>
+          <dt>Range</dt><dd>${escapeHtml(block.date_range || '—')}</dd>
+          <dt>Latest</dt><dd>${escapeHtml(String(block.latest_date || '—'))}</dd>
+          <dt>Freshness</dt><dd>${escapeHtml(staleLabel(block.stale_days))}</dd>
+          <dt>Size</dt><dd>${escapeHtml(block.size || '—')}</dd>
+        </dl>
+      </div>`;
+    }
+
+    function renderSummary(data) {
+      renderHero(data);
+      $('summaryUpdated').textContent = data.timestamp
+        ? new Date(data.timestamp).toLocaleString()
+        : '';
+
+      const players = data.players;
+      let playersHtml = '';
+      if (!players) {
+        playersHtml = `<div class="summary-card"><h3>Players</h3><p class="help">No file loaded.</p></div>`;
+      } else if (players.error) {
+        playersHtml = `<div class="summary-card"><h3>Players</h3><p class="job-error">${escapeHtml(players.error)}</p></div>`;
+      } else {
+        playersHtml = `<div class="summary-card">
+          <h3>Players</h3>
+          <dl>
+            <dt>Total</dt><dd>${fmtNum(players.count)}</dd>
+            <dt>With bio</dt><dd>${fmtNum(players.with_bio)} (${players.bio_coverage_pct ?? 0}%)</dd>
+            <dt>Missing bio</dt><dd>${fmtNum(players.missing_bio)}</dd>
+            <dt>Birthdates</dt><dd>${fmtNum(players.with_birthdate)} (${players.birthdate_coverage_pct ?? 0}%)</dd>
+            <dt>Missing DOB</dt><dd>${fmtNum(players.missing_birthdate)}</dd>
+            <dt>Countries</dt><dd>${fmtNum(players.countries)}</dd>
+            <dt>Size</dt><dd>${escapeHtml(players.size || '—')}</dd>
+          </dl>
+        </div>`;
+      }
+
+      const t = data.tournaments;
+      let tourHtml = '';
+      if (!t) {
+        tourHtml = `<div class="summary-card"><h3>Tournaments</h3><p class="help">No file loaded.</p></div>`;
+      } else {
+        const byType = t.counts_by_type
+          ? Object.entries(t.counts_by_type).map(([k, v]) => `${k.toUpperCase()}: ${fmtNum(v)}`).join(' · ')
+          : (t.types || []).map(x => String(x).toUpperCase()).join(', ') || '—';
+        tourHtml = `<div class="summary-card">
+          <h3>Tournaments</h3>
+          <dl>
+            <dt>Total</dt><dd>${fmtNum(t.count)}</dd>
+            <dt>Years</dt><dd>${escapeHtml(t.year_range || '—')}</dd>
+            <dt>By type</dt><dd>${escapeHtml(byType)}</dd>
+            <dt>Winners</dt><dd>${fmtNum(t.with_winners)} (${t.winner_coverage_pct ?? 0}%)</dd>
+            <dt>Size</dt><dd>${escapeHtml(t.size || '—')}</dd>
+          </dl>
+        </div>`;
+      }
+
+      const storageHtml = `<div class="summary-card">
+        <h3>Storage</h3>
+        <dl>
+          <dt>Backend</dt><dd>${escapeHtml((data.storage || 'local').toUpperCase())}</dd>
+          <dt>Location</dt><dd>${escapeHtml(data.storage === 's3' ? (data.bucket || 'S3') : 'data/ folder')}</dd>
+          <dt>Checked</dt><dd>${escapeHtml(new Date(data.timestamp).toLocaleString())}</dd>
+        </dl>
+      </div>`;
+
+      $('dataSummary').innerHTML =
+        rankingCard('Singles rankings', data.rankings_singles) +
+        rankingCard('Doubles rankings', data.rankings_doubles) +
+        playersHtml +
+        tourHtml +
+        storageHtml;
+    }
+
+    function jobLabel(job) {
+      if (job.type === 'rankings') return `Rankings · ${job.ranking_type || ''}`;
+      if (job.type === 'tournaments') {
+        const types = (job.tournament_types || job.types || []).join(', ');
+        return `Tournaments · ${job.start_year || ''}-${job.end_year || ''} · ${types}`;
+      }
+      if (job.type === 'players') {
+        return `Players · batch ${job.num_players ?? '—'}`;
+      }
+      return job.type || 'Job';
+    }
+
+    function jobResultLine(job) {
+      const bits = [];
+      if (job.weeks_scraped !== undefined) bits.push(`Weeks scraped: ${job.weeks_scraped}`);
+      if (job.tournaments_scraped !== undefined) bits.push(`Tournaments: ${job.tournaments_scraped}`);
+      if (job.players_updated !== undefined) bits.push(`Players updated: ${job.players_updated}`);
+      if (job.started) bits.push(`Started ${new Date(job.started).toLocaleString()}`);
+      if (job.completed) bits.push(`Finished ${new Date(job.completed).toLocaleString()}`);
+      return bits.join(' · ');
+    }
+
+    function renderJobs(data) {
+      if (!data.active?.length && !data.completed?.length) {
+        $('jobStatus').innerHTML = '<div class="empty">No jobs yet.</div>';
+        return;
+      }
+
+      let html = '';
+      (data.active || []).forEach(job => {
+        html += `<div class="job running">
+          <div class="job-top"><span class="badge running">${escapeHtml(job.status)}</span>${escapeHtml(jobLabel(job))}</div>
+          <div class="job-meta">${escapeHtml(jobResultLine(job))}</div>
+        </div>`;
+      });
+      (data.completed || []).slice().reverse().slice(0, 12).forEach(job => {
+        const cls = job.status === 'completed' ? 'completed' : 'failed';
+        html += `<div class="job ${cls}">
+          <div class="job-top"><span class="badge ${cls}">${escapeHtml(job.status)}</span>${escapeHtml(jobLabel(job))}</div>
+          <div class="job-meta">${escapeHtml(jobResultLine(job))}</div>
+          ${job.error ? `<div class="job-error">${escapeHtml(job.error)}</div>` : ''}
+        </div>`;
+      });
+      $('jobStatus').innerHTML = html;
+    }
+
+    async function refreshDataSummary(quiet = false) {
+      try {
+        const result = await adminFetch('/admin/data-summary');
+        if (!result) return;
+        const { response, data } = result;
+        if (!response.ok) {
+          setAuthUi(false, errorDetail(data));
+          if (!quiet) toast('Summary failed', errorDetail(data), true);
+          return;
         }
+        setAuthUi(true, 'Authenticated');
+        sessionStorage.setItem(PASS_KEY, $('password').value);
+        $('clearSessionBtn').hidden = false;
+        renderSummary(data);
+      } catch (err) {
+        if (!quiet) toast('Summary failed', err.message, true);
+      }
+    }
 
-        function errorDetail(data) {
-            if (!data || data.detail === undefined) return 'Unknown error';
-            return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+    async function fetchJobs(quiet = true) {
+      if (!$('password').value) return;
+      try {
+        const result = await adminFetch('/admin/jobs');
+        if (!result) return;
+        const { response, data } = result;
+        if (!response.ok) {
+          if (!quiet) toast('Jobs failed', errorDetail(data), true);
+          return;
         }
-
-        /** Admin API helper: password goes in Authorization, never in the URL. */
-        async function adminFetch(path, options = {}) {
-            const password = getPassword();
-            if (!password) return null;
-
-            const headers = new Headers(options.headers || {});
-            headers.set('Authorization', `Bearer ${password}`);
-            if (!headers.has('Accept')) {
-                headers.set('Accept', 'application/json');
-            }
-
-            const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
-            let data = null;
-            try {
-                data = await response.json();
-            } catch (_) {
-                data = null;
-            }
-            return { response, data };
+        renderJobs(data);
+        if (data.active?.length) {
+          $('statBusy').textContent = 'Busy';
+          $('statBusySub').textContent = data.active[0].job_id || 'Job running';
         }
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
-        document.getElementById('password').addEventListener('input', (e) => {
-            const status = document.getElementById('passwordStatus');
-            status.textContent = e.target.value ? 'Ready (sent as Bearer token)' : '';
-        });
+    function startPolling() {
+      stopPolling();
+      fetchJobs(true);
+      refreshDataSummary(true);
+      jobsTimer = setInterval(() => fetchJobs(true), 5000);
+      summaryTimer = setInterval(() => refreshDataSummary(true), 30000);
+    }
 
-        async function updateRankings() {
-            const rankingType = document.getElementById('rankingType').value;
-            const maxWeeks = document.getElementById('maxWeeks').value;
-            const params = new URLSearchParams({
-                ranking_type: rankingType,
-                max_weeks: maxWeeks,
-            });
+    function stopPolling() {
+      if (jobsTimer) clearInterval(jobsTimer);
+      if (summaryTimer) clearInterval(summaryTimer);
+      jobsTimer = null;
+      summaryTimer = null;
+    }
 
-            try {
-                const result = await adminFetch(`/admin/update-rankings?${params}`, { method: 'POST' });
-                if (!result) return;
-                const { response, data } = result;
-                if (response.ok) {
-                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
-                } else {
-                    alert(`Error: ${errorDetail(data)}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
+    async function updateRankings() {
+      const params = new URLSearchParams({
+        ranking_type: $('rankingType').value,
+        max_weeks: $('maxWeeks').value,
+      });
+      try {
+        const result = await adminFetch(`/admin/update-rankings?${params}`, { method: 'POST' });
+        if (!result) return;
+        const { response, data } = result;
+        if (response.ok) {
+          toast('Rankings job started', `${data.message}\n${data.job_id}`);
+          fetchJobs(true);
+        } else {
+          toast('Could not start rankings', errorDetail(data), true);
         }
+      } catch (err) {
+        toast('Could not start rankings', err.message, true);
+      }
+    }
 
-        async function updateTournaments() {
-            const startYear = document.getElementById('startYear').value;
-            const endYear = document.getElementById('endYear').value;
-
-            const types = [];
-            ['atp', 'gs', 'ch', 'fu'].forEach(type => {
-                if (document.getElementById(`type_${type}`).checked) {
-                    types.push(type);
-                }
-            });
-
-            if (types.length === 0) {
-                alert('Please select at least one tournament type');
-                return;
-            }
-
-            const params = new URLSearchParams({
-                start_year: startYear,
-                end_year: endYear,
-                types: types.join(','),
-            });
-
-            try {
-                const result = await adminFetch(`/admin/update-tournaments?${params}`, { method: 'POST' });
-                if (!result) return;
-                const { response, data } = result;
-                if (response.ok) {
-                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
-                } else {
-                    alert(`Error: ${errorDetail(data)}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
+    async function updateTournaments() {
+      const types = ['atp', 'gs', 'ch', 'fu'].filter(t => $(`type_${t}`).checked);
+      if (!types.length) {
+        toast('Select tournament types', 'Pick at least one type.', true);
+        return;
+      }
+      const params = new URLSearchParams({
+        start_year: $('startYear').value,
+        end_year: $('endYear').value,
+        types: types.join(','),
+      });
+      try {
+        const result = await adminFetch(`/admin/update-tournaments?${params}`, { method: 'POST' });
+        if (!result) return;
+        const { response, data } = result;
+        if (response.ok) {
+          toast('Tournament job started', `${data.message}\n${data.job_id}`);
+          fetchJobs(true);
+        } else {
+          toast('Could not start tournaments', errorDetail(data), true);
         }
+      } catch (err) {
+        toast('Could not start tournaments', err.message, true);
+      }
+    }
 
-        async function updatePlayers() {
-            const numPlayers = document.getElementById('numPlayers').value;
-            const params = new URLSearchParams({ num_players: numPlayers });
-
-            try {
-                const result = await adminFetch(`/admin/update-players?${params}`, { method: 'POST' });
-                if (!result) return;
-                const { response, data } = result;
-                if (response.ok) {
-                    alert(`Success!\n${data.message}\nJob ID: ${data.job_id}`);
-                } else {
-                    alert(`Error: ${errorDetail(data)}`);
-                }
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-            }
+    async function updatePlayers() {
+      const params = new URLSearchParams({ num_players: $('numPlayers').value });
+      try {
+        const result = await adminFetch(`/admin/update-players?${params}`, { method: 'POST' });
+        if (!result) return;
+        const { response, data } = result;
+        if (response.ok) {
+          toast('Player job started', `${data.message}\n${data.job_id}`);
+          fetchJobs(true);
+        } else {
+          toast('Could not start players', errorDetail(data), true);
         }
+      } catch (err) {
+        toast('Could not start players', err.message, true);
+      }
+    }
 
-        async function refreshDataSummary() {
-            try {
-                const result = await adminFetch('/admin/data-summary');
-                if (!result) return;
-                const { response, data } = result;
-
-                if (!response.ok) {
-                    alert(`Error: ${errorDetail(data)}`);
-                    return;
-                }
-
-                // Display summary
-                const summaryDiv = document.getElementById('dataSummary');
-                summaryDiv.innerHTML = '';
-
-                // Players
-                if (data.players) {
-                    summaryDiv.innerHTML += `
-                        <div class="summary-card">
-                            <h3>👤 Players</h3>
-                            <div class="summary-info">
-                                <strong>Total:</strong> ${data.players.count || 0} players<br>
-                                <strong>With Bio:</strong> ${data.players.with_bio || 0}<br>
-                                <strong>Missing Bio:</strong> ${data.players.missing_bio || 0}<br>
-                                <strong>Countries:</strong> ${data.players.countries || 0}<br>
-                                <strong>File Size:</strong> ${data.players.size || 'N/A'}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                // Singles Rankings
-                if (data.rankings_singles) {
-                    summaryDiv.innerHTML += `
-                        <div class="summary-card">
-                            <h3>📊 Singles Rankings</h3>
-                            <div class="summary-info">
-                                <strong>Total:</strong> ${data.rankings_singles.count || 0} records<br>
-                                <strong>Players:</strong> ${data.rankings_singles.unique_players || 0}<br>
-                                <strong>Date Range:</strong> ${data.rankings_singles.date_range || 'N/A'}<br>
-                                <strong>Latest:</strong> ${data.rankings_singles.latest_date || 'N/A'}<br>
-                                <strong>File Size:</strong> ${data.rankings_singles.size || 'N/A'}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                // Doubles Rankings
-                if (data.rankings_doubles) {
-                    summaryDiv.innerHTML += `
-                        <div class="summary-card">
-                            <h3>📊 Doubles Rankings</h3>
-                            <div class="summary-info">
-                                <strong>Total:</strong> ${data.rankings_doubles.count || 0} records<br>
-                                <strong>Players:</strong> ${data.rankings_doubles.unique_players || 0}<br>
-                                <strong>Date Range:</strong> ${data.rankings_doubles.date_range || 'N/A'}<br>
-                                <strong>Latest:</strong> ${data.rankings_doubles.latest_date || 'N/A'}<br>
-                                <strong>File Size:</strong> ${data.rankings_doubles.size || 'N/A'}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                // Tournaments
-                if (data.tournaments) {
-                    summaryDiv.innerHTML += `
-                        <div class="summary-card">
-                            <h3>🏆 Tournaments</h3>
-                            <div class="summary-info">
-                                <strong>Total:</strong> ${data.tournaments.count || 0} tournaments<br>
-                                <strong>Year Range:</strong> ${data.tournaments.year_range || 'N/A'}<br>
-                                <strong>Types:</strong> ${data.tournaments.types ? data.tournaments.types.join(', ').toUpperCase() : 'N/A'}<br>
-                                <strong>With Winners:</strong> ${data.tournaments.with_winners || 0}<br>
-                                <strong>File Size:</strong> ${data.tournaments.size || 'N/A'}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                // Storage info
-                summaryDiv.innerHTML += `
-                    <div class="summary-card">
-                        <h3>💾 Storage</h3>
-                        <div class="summary-info">
-                            <strong>Type:</strong> ${data.storage || 'Local'}<br>
-                            <strong>Location:</strong> ${data.storage === 's3' ? 'AWS S3' : 'data/ folder'}<br>
-                            <strong>Updated:</strong> ${new Date(data.timestamp).toLocaleString()}
-                        </div>
-                    </div>
-                `;
-
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
+    async function testPlaywright() {
+      $('sysPw').textContent = 'Testing…';
+      try {
+        const result = await adminFetch('/admin/test-playwright');
+        if (!result) {
+          $('sysPw').textContent = '—';
+          return;
         }
-
-        async function fetchJobs() {
-            if (!document.getElementById('password').value) return;
-
-            try {
-                const result = await adminFetch('/admin/jobs');
-                if (!result) return;
-                const { response, data } = result;
-
-                if (!response.ok) {
-                    document.getElementById('jobStatus').innerHTML = '<div class="empty-state">Error loading jobs</div>';
-                    return;
-                }
-
-                const statusDiv = document.getElementById('jobStatus');
-
-                if (data.active.length === 0 && data.completed.length === 0) {
-                    statusDiv.innerHTML = '<div class="empty-state">No jobs yet. Start an update to see jobs here.</div>';
-                    return;
-                }
-
-                let html = '<div class="job-list">';
-
-                // Active jobs
-                if (data.active.length > 0) {
-                    html += '<h3 style="font-size: 14px; margin-bottom: 8px; color: #f39c12;">⚡ Active Jobs</h3>';
-                    data.active.forEach(job => {
-                        html += `
-                            <div class="job-item running">
-                                <div class="job-header">
-                                    <span class="status-badge status-running">${job.status}</span>
-                                    ${job.type} - ${job.ranking_type || job.tournament_types || `${job.num_players} players`}
-                                </div>
-                                <div class="job-details">
-                                    Started: ${new Date(job.started).toLocaleString()}
-                                </div>
-                            </div>
-                        `;
-                    });
-                }
-
-                // Completed jobs
-                if (data.completed.length > 0) {
-                    html += '<h3 style="font-size: 14px; margin: 12px 0 8px; color: #27ae60;">✓ Recent Jobs</h3>';
-                    data.completed.slice(0, 10).forEach(job => {
-                        const isSuccess = job.status === 'completed';
-
-                        // Human-readable job label by type
-                        let jobLabel = job.type;
-                        if (job.type === 'rankings') {
-                            jobLabel += ` - ${job.ranking_type}`;
-                        } else if (job.type === 'tournaments') {
-                            jobLabel += ` - ${(job.tournament_types || []).join(', ')}`;
-                        } else if (job.type === 'players') {
-                            jobLabel += ` - ${job.players_updated ?? job.num_players} players`;
-                        }
-
-                        html += `
-                            <div class="job-item ${isSuccess ? 'completed' : 'failed'}">
-                                <div class="job-header">
-                                    <span class="status-badge status-${job.status}">${job.status}</span>
-                                    ${jobLabel}
-                                </div>
-                                <div class="job-details">
-                                    ${job.weeks_scraped !== undefined ? `Weeks: ${job.weeks_scraped}` : ''}
-                                    ${job.tournaments_scraped !== undefined ? `Tournaments: ${job.tournaments_scraped}` : ''}
-                                    ${job.players_updated !== undefined ? `Players: ${job.players_updated}` : ''}
-                                    | Completed: ${new Date(job.completed).toLocaleString()}
-                                </div>
-                            </div>
-                        `;
-                    });
-                }
-
-                html += '</div>';
-                statusDiv.innerHTML = html;
-
-            } catch (error) {
-                console.error('Error fetching jobs:', error);
-            }
+        const { response, data } = result;
+        if (!response.ok) {
+          $('sysPw').textContent = 'Failed';
+          toast('Playwright test failed', errorDetail(data), true);
+          return;
         }
+        if (data.status === 'ok') {
+          $('sysPw').textContent = `OK · ${data.title || 'example.com'}`;
+          toast('Playwright OK', data.title || 'Browser launched successfully');
+        } else {
+          $('sysPw').textContent = 'Error';
+          toast('Playwright test failed', data.error || 'Unknown error', true);
+        }
+      } catch (err) {
+        $('sysPw').textContent = 'Error';
+        toast('Playwright test failed', err.message, true);
+      }
+    }
 
-        // Auto-refresh jobs every 5 seconds
-        document.getElementById('password').addEventListener('input', (e) => {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-            }
+    $('btnRankings').addEventListener('click', updateRankings);
+    $('btnTournaments').addEventListener('click', updateTournaments);
+    $('btnPlayers').addEventListener('click', updatePlayers);
+    $('btnPlaywright').addEventListener('click', testPlaywright);
+    $('btnRefreshSummary').addEventListener('click', () => refreshDataSummary(false));
 
-            if (e.target.value) {
-                // Fetch immediately
-                fetchJobs();
+    $('password').addEventListener('input', () => {
+      const pwd = $('password').value.trim();
+      if (pwd) {
+        sessionStorage.setItem(PASS_KEY, pwd);
+        setAuthUi(null, 'Ready');
+        startPolling();
+      } else {
+        sessionStorage.removeItem(PASS_KEY);
+        setAuthUi(null, 'Enter password');
+        stopPolling();
+      }
+      $('clearSessionBtn').hidden = !sessionStorage.getItem(PASS_KEY);
+    });
 
-                // Then every 5 seconds
-                autoRefreshInterval = setInterval(fetchJobs, 5000);
-            }
-        });
+    $('clearSessionBtn').addEventListener('click', () => {
+      sessionStorage.removeItem(PASS_KEY);
+      $('password').value = '';
+      stopPolling();
+      setAuthUi(null, 'Cleared');
+      $('clearSessionBtn').hidden = true;
+    });
 
-        // Initial load
-        setTimeout(() => {
-            if (document.getElementById('password').value) {
-                fetchJobs();
-            }
-        }, 100);
-    </script>
+    const saved = sessionStorage.getItem(PASS_KEY);
+    if (saved) {
+      $('password').value = saved;
+      setAuthUi(null, 'Restored');
+      startPolling();
+    }
+  </script>
 </body>
 </html>
