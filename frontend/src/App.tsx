@@ -1,5 +1,5 @@
 // frontend/src/App.tsx
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import RankingsChart from './components/RankingsChart';
 import PlayerSearch from './components/PlayerSearch';
@@ -24,14 +24,54 @@ interface Tournament {
   doubles_winner_ids: string | null;
 }
 
+/** Distinct series colors (kept clear of the court-green UI accent). */
 const PLAYER_COLORS = [
-  '#3B82F6', // blue
-  '#EF4444', // red
-  '#10B981', // green
-  '#F59E0B', // amber
-  '#8B5CF6', // purple
-  '#EC4899', // pink
+  '#1d4e89',
+  '#c1292e',
+  '#d97706',
+  '#0e7490',
+  '#7c2d12',
+  '#9f1239',
 ];
+
+function BrandMark({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 600 220"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M60 180 Q100 140 180 160 Q260 180 340 90 Q380 50 420 60 Q470 75 430 130 Q420 145 410 150 Q400 155 395 140 Q390 120 410 110 Q440 95 470 110 Q500 125 520 165 Q530 185 510 200 Q490 215 465 200 Q440 185 450 150 Q460 120 500 120"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M540 70 Q550 60 560 70 Q570 80 560 90 Q550 100 540 90 Q530 80 540 70"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function segmentBtn(active: boolean, disabled = false) {
+  return [
+    'px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap',
+    disabled ? 'cursor-not-allowed opacity-40' : '',
+    active
+      ? 'bg-court text-white'
+      : 'bg-surface text-ink hover:bg-court-soft',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
 
 function App() {
   const [rankingType, setRankingType] = useState<RankingType>('singles');
@@ -41,14 +81,16 @@ function App() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const playerColors = useMemo(() => {
-    return Object.fromEntries(
-      selectedPlayers.map((player, index) => [
-        player.player_id,
-        PLAYER_COLORS[index % PLAYER_COLORS.length]
-      ])
-    );
-  }, [selectedPlayers]);
+  const playerColors = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedPlayers.map((player, index) => [
+          player.player_id,
+          PLAYER_COLORS[index % PLAYER_COLORS.length],
+        ])
+      ),
+    [selectedPlayers]
+  );
 
   const playersWithBirthdate = useMemo(
     () => selectedPlayers.filter(p => hasBirthdate(p.birthdate)),
@@ -80,6 +122,8 @@ function App() {
 
   useEffect(() => {
     if (selectedPlayers.length === 0) {
+      setRankingsData([]);
+      setLoading(false);
       return;
     }
 
@@ -100,6 +144,7 @@ function App() {
         if (!cancelled) setRankingsData(response.data);
       } catch (error) {
         console.error('Error fetching rankings:', error);
+        if (!cancelled) setRankingsData([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -111,6 +156,9 @@ function App() {
   }, [selectedPlayers, rankingType]);
 
   const chartRankings = selectedPlayers.length > 0 ? rankingsData : [];
+  const hasPlayers = selectedPlayers.length > 0;
+  const showChart = chartRankings.length > 0;
+  const noDataForPlayers = !loading && hasPlayers && !showChart;
 
   const handleAddPlayer = (player: Player) => {
     if (!selectedPlayers.find(p => p.player_id === player.player_id)) {
@@ -122,53 +170,60 @@ function App() {
     setSelectedPlayers(selectedPlayers.filter(p => p.player_id !== playerId));
   };
 
-  const toggleBtn = (active: boolean, extra = '') =>
-    `px-4 py-3 font-medium transition-colors ${extra} ${
-      active
-        ? 'bg-blue-600 text-white'
-        : 'bg-white text-gray-700 hover:bg-gray-50'
-    }`;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
-        <header className="flex items-center gap-3 mb-6">
-          <img src="/logo.svg" alt="TennisRank" className="h-14" />
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800">
-              TennisRank.net
-            </h1>
-            <p className="text-sm text-gray-600">Track ATP rankings over time</p>
-          </div>
-        </header>
+    <div className="flex h-dvh flex-col overflow-hidden text-ink">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line/80 bg-surface/90 px-4 py-2.5 backdrop-blur-sm sm:px-5">
+        <BrandMark className="h-9 w-auto text-court sm:h-10" />
+        <div className="min-w-0">
+          <h1 className="font-display text-xl font-semibold leading-tight tracking-tight text-court-ink sm:text-2xl">
+            TennisRank.net
+          </h1>
+          <p className="truncate text-xs text-muted sm:text-sm">
+            ATP rankings over time
+          </p>
+        </div>
+      </header>
 
-        <div className="bg-white rounded-lg shadow-lg p-5 mb-6">
+      <section className="shrink-0 border-b border-line/80 bg-surface/80 px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+          <PlayerSearch onSelectPlayer={handleAddPlayer} autoFocus />
+
           <div className="flex flex-wrap gap-2">
-            <div className="flex-1 min-w-[16rem]">
-              <PlayerSearch onSelectPlayer={handleAddPlayer} />
-            </div>
-            <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden">
+            <div
+              className="inline-flex overflow-hidden rounded-md border border-line"
+              role="group"
+              aria-label="Ranking type"
+            >
               <button
+                type="button"
                 onClick={() => setRankingType('singles')}
-                className={toggleBtn(rankingType === 'singles')}
+                className={segmentBtn(rankingType === 'singles')}
               >
                 Singles
               </button>
               <button
+                type="button"
                 onClick={() => setRankingType('doubles')}
-                className={toggleBtn(rankingType === 'doubles', 'border-l border-gray-300')}
+                className={`${segmentBtn(rankingType === 'doubles')} border-l border-line`}
               >
                 Doubles
               </button>
             </div>
-            <div className="flex gap-0 border border-gray-300 rounded-lg overflow-hidden">
+
+            <div
+              className="inline-flex overflow-hidden rounded-md border border-line"
+              role="group"
+              aria-label="Chart x-axis"
+            >
               <button
+                type="button"
                 onClick={() => setXAxisMode('date')}
-                className={toggleBtn(effectiveXAxisMode === 'date')}
+                className={segmentBtn(effectiveXAxisMode === 'date')}
               >
                 Date
               </button>
               <button
+                type="button"
                 onClick={() => canUseAgeAxis && setXAxisMode('age')}
                 disabled={!canUseAgeAxis}
                 title={
@@ -176,79 +231,101 @@ function App() {
                     ? 'Plot rankings by player age'
                     : 'Add a player with a known birthdate to use Age'
                 }
-                className={toggleBtn(
-                  effectiveXAxisMode === 'age',
-                  `border-l border-gray-300 ${!canUseAgeAxis ? 'opacity-40 cursor-not-allowed hover:bg-white' : ''}`
-                )}
+                className={`${segmentBtn(effectiveXAxisMode === 'age', !canUseAgeAxis)} border-l border-line`}
               >
                 Age
               </button>
             </div>
           </div>
+        </div>
 
-          {selectedPlayers.length > 0 && (
-            <div className="mt-3">
-              <div className="flex flex-wrap gap-2">
-                {selectedPlayers.map((player) => (
-                  <div
-                    key={player.player_id}
-                    className="px-3 py-1 rounded-full text-sm flex items-center gap-2 font-medium"
-                    style={{
-                      backgroundColor: playerColors[player.player_id] + '20',
-                      color: playerColors[player.player_id],
-                      border: `2px solid ${playerColors[player.player_id]}`,
-                    }}
-                  >
-                    <span>{player.player_name}</span>
-                    {effectiveXAxisMode === 'age' && !hasBirthdate(player.birthdate) && (
-                      <span className="text-xs opacity-70">(no DOB)</span>
+        {hasPlayers && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {selectedPlayers.map(player => (
+                <div
+                  key={player.player_id}
+                  className="chip-enter flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium"
+                  style={{
+                    backgroundColor: `${playerColors[player.player_id]}18`,
+                    color: playerColors[player.player_id],
+                    borderColor: playerColors[player.player_id],
+                  }}
+                >
+                  <span>{player.player_name}</span>
+                  {effectiveXAxisMode === 'age' &&
+                    !hasBirthdate(player.birthdate) && (
+                      <span className="text-xs opacity-70">no DOB</span>
                     )}
-                    <button
-                      onClick={() => handleRemovePlayer(player.player_id)}
-                      className="hover:opacity-70 font-bold text-lg leading-none"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {effectiveXAxisMode === 'age' &&
-                playersWithBirthdate.length < selectedPlayers.length && (
-                  <p className="mt-2 text-sm text-gray-500">
-                    Age view shows {playersWithBirthdate.length} of{' '}
-                    {selectedPlayers.length} players (birthdate required).
-                  </p>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePlayer(player.player_id)}
+                    className="ml-0.5 text-base leading-none opacity-70 hover:opacity-100"
+                    aria-label={`Remove ${player.player_name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {effectiveXAxisMode === 'age' &&
+          playersWithBirthdate.length < selectedPlayers.length && (
+            <p className="mt-2 text-xs text-muted">
+              Age view shows {playersWithBirthdate.length} of{' '}
+              {selectedPlayers.length} players (birthdate required).
+            </p>
+          )}
+      </section>
+
+      <main className="relative flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-5 sm:py-4">
+        <div className="relative flex min-h-0 flex-1 flex-col rounded-md border border-line bg-surface">
+          {loading && (
+            <div
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-surface/75 backdrop-blur-[1px]"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-court/25 border-t-court" />
+              <p className="text-sm text-muted">Loading rankings…</p>
+            </div>
+          )}
+
+          {!hasPlayers && !loading && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+              <p className="font-display text-lg text-court-ink">
+                Compare ATP careers
+              </p>
+              <p className="max-w-sm text-sm text-muted">
+                Search for a player to start the chart.
+              </p>
+            </div>
+          )}
+
+          {noDataForPlayers && (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+              <p className="rounded-md bg-warn-bg px-4 py-3 text-sm text-warn-ink">
+                No ranking data found for the selected players.
+              </p>
+            </div>
+          )}
+
+          {showChart && (
+            <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
+              <RankingsChart
+                data={chartRankings}
+                players={selectedPlayers}
+                playerColors={playerColors}
+                tournaments={tournaments}
+                rankingType={rankingType}
+                xAxisMode={effectiveXAxisMode}
+              />
             </div>
           )}
         </div>
-
-        {loading && (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-            <p className="mt-3 text-gray-600">Loading rankings...</p>
-          </div>
-        )}
-
-        {!loading && chartRankings.length > 0 && (
-          <div className="bg-white rounded-lg shadow-lg p-5">
-            <RankingsChart
-              data={chartRankings}
-              players={selectedPlayers}
-              playerColors={playerColors}
-              tournaments={tournaments}
-              rankingType={rankingType}
-              xAxisMode={effectiveXAxisMode}
-            />
-          </div>
-        )}
-
-        {!loading && selectedPlayers.length > 0 && chartRankings.length === 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-            <p className="text-yellow-800">No ranking data found for selected players.</p>
-          </div>
-        )}
-      </div>
+      </main>
     </div>
   );
 }

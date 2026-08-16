@@ -1,6 +1,6 @@
 // frontend/src/components/RankingsChart.tsx
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -186,6 +186,8 @@ function RankingsChart({
   // After the user picks a window, don't auto-widen away from an empty range.
   const [rangePinned, setRangePinned] = useState(false);
   const byAge = xAxisMode === 'age';
+  const chartRef = useRef<ChartJS<'line', ChartPoint[]>>(null);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
 
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
   const birthdateByPlayer = Object.fromEntries(
@@ -208,11 +210,11 @@ function RankingsChart({
     .sort()
     .join(',');
 
-  // New player set → prefer 1Y, then auto-widen if that window is empty.
+  // Player set or ranking type changed: keep the user's window, but allow
+  // auto-widen again if that window has no points for the new data.
   useEffect(() => {
     setRangePinned(false);
-    setActiveRange('1Y');
-  }, [playerSelectionKey]);
+  }, [playerSelectionKey, rankingType]);
 
   // When the selected window has no points (e.g. retired player + default 1Y),
   // widen to the smallest range that still plots something.
@@ -386,23 +388,39 @@ function RankingsChart({
     datasets: [...markerDatasets, ...lineDatasets],
   } as ChartData<'line', ChartPoint[]>;
 
+  const hasPlot = lineDatasets.length > 0;
+
+  useEffect(() => {
+    if (!hasPlot) return;
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      chartRef.current?.resize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasPlot]);
+
   const xScale = byAge
     ? {
         type: 'linear' as const,
         title: {
           display: true,
           text: 'Age',
-          font: { size: 13 },
+          font: { size: 12, family: 'Manrope, sans-serif', weight: 500 },
+          color: '#5a6d64',
         },
         ticks: {
           maxTicksLimit: 12,
+          color: '#5a6d64',
+          font: { family: 'Manrope, sans-serif', size: 11 },
           callback: (value: string | number) => {
             const n = typeof value === 'number' ? value : Number(value);
             return Number.isFinite(n) ? n.toFixed(n % 1 === 0 ? 0 : 1) : '';
           },
         },
         grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
+          color: 'rgba(20, 35, 28, 0.06)',
         },
       }
     : {
@@ -412,14 +430,17 @@ function RankingsChart({
         },
         ticks: {
           maxTicksLimit: 12,
+          color: '#5a6d64',
+          font: { family: 'Manrope, sans-serif', size: 11 },
         },
         title: {
           display: true,
           text: 'Date',
-          font: { size: 13 },
+          font: { size: 12, family: 'Manrope, sans-serif', weight: 500 },
+          color: '#5a6d64',
         },
         grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
+          color: 'rgba(20, 35, 28, 0.06)',
         },
       };
 
@@ -446,20 +467,19 @@ function RankingsChart({
           if (!tooltipEl) {
             tooltipEl = document.createElement('div');
             tooltipEl.id = 'chartjs-tooltip';
-            tooltipEl.style.background = 'rgba(255, 255, 255, 0.95)';
-            tooltipEl.style.borderRadius = '3px';
-            tooltipEl.style.border = '1px solid rgba(0, 0, 0, 0.1)';
-            tooltipEl.style.color = 'black';
+            tooltipEl.style.background = 'var(--color-surface)';
+            tooltipEl.style.borderRadius = '6px';
+            tooltipEl.style.border = '1px solid var(--color-line)';
+            tooltipEl.style.color = 'var(--color-ink)';
             tooltipEl.style.opacity = '1';
             tooltipEl.style.pointerEvents = 'none';
             tooltipEl.style.position = 'absolute';
-            tooltipEl.style.transition = 'all .1s ease';
-            tooltipEl.style.padding = '8px';
+            tooltipEl.style.transition = 'opacity .1s ease';
+            tooltipEl.style.padding = '8px 10px';
             tooltipEl.style.fontSize = '12px';
-            tooltipEl.style.fontFamily = 'Arial, sans-serif';
+            tooltipEl.style.fontFamily = 'var(--font-sans)';
             tooltipEl.style.zIndex = '1000';
             tooltipEl.style.lineHeight = '1.4';
-            tooltipEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
             document.body.appendChild(tooltipEl);
           }
 
@@ -526,18 +546,18 @@ function RankingsChart({
               const typeLabel = TOURNAMENT_TYPE_LABELS[tournament.tournamentType] || tournament.tournamentType.toUpperCase();
               const venue = tournament.venue || '';
 
-              let tournamentLine = `🏆 ${tournament.name}`;
+              let tournamentLine = tournament.name;
               if (typeLabel || venue) {
-                tournamentLine += ' •';
+                tournamentLine += ' ·';
                 if (typeLabel) {
                   tournamentLine += ` ${typeLabel}`;
                 }
                 if (venue) {
-                  tournamentLine += ` • ${venue}`;
+                  tournamentLine += ` · ${venue}`;
                 }
               }
 
-              innerHtml += `<div style="color: ${color}; margin-left: 6px; margin-bottom: 3px;">${tournamentLine}</div>`;
+              innerHtml += `<div style="color: ${color}; margin-left: 6px; margin-bottom: 3px; opacity: 0.9;">${tournamentLine}</div>`;
             });
           });
 
@@ -606,6 +626,8 @@ function RankingsChart({
         ticks: {
           stepSize: 1,
           maxTicksLimit: 10,
+          color: '#5a6d64',
+          font: { family: 'Manrope, sans-serif', size: 11 },
           callback: function (value: string | number) {
             const n = typeof value === 'number' ? value : Number(value);
             return Number.isInteger(n) && n >= 1 ? n : '';
@@ -623,47 +645,58 @@ function RankingsChart({
           display: true,
           text: 'Rank',
           font: {
-            size: 13,
+            size: 12,
+            family: 'Manrope, sans-serif',
+            weight: 500,
           },
+          color: '#5a6d64',
         },
         grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
+          color: 'rgba(20, 35, 28, 0.06)',
         },
       },
     },
   };
 
   const rangeControls = byAge ? (
-    <p className="text-sm text-gray-500 text-right">
+    <p className="shrink-0 text-right text-xs text-muted sm:text-sm">
       Full careers overlaid by age (date ranges apply in Date view).
     </p>
   ) : (
-    <div className="flex gap-1 justify-end">
-      {DATE_RANGES.map(range => (
-        <button
-          key={range}
-          type="button"
-          onClick={() => {
-            setRangePinned(true);
-            setActiveRange(range);
-          }}
-          className={`px-3 py-1 text-sm rounded ${
-            activeRange === range
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          {range}
-        </button>
-      ))}
+    <div className="flex shrink-0 justify-end overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className="inline-flex overflow-hidden rounded-md border border-line"
+        role="group"
+        aria-label="Date range"
+      >
+        {DATE_RANGES.map((range, index) => (
+          <button
+            key={range}
+            type="button"
+            onClick={() => {
+              setRangePinned(true);
+              setActiveRange(range);
+            }}
+            className={`shrink-0 px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
+              index > 0 ? 'border-l border-line' : ''
+            } ${
+              activeRange === range
+                ? 'bg-court text-white'
+                : 'bg-surface text-muted hover:bg-court-soft hover:text-ink'
+            }`}
+          >
+            {range}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
   if (lineDatasets.length === 0) {
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
         {rangeControls}
-        <div className="py-10 text-center text-gray-600">
+        <div className="flex flex-1 items-center justify-center text-center text-sm text-muted">
           {byAge
             ? 'No ranking points to plot by age for the selected players.'
             : 'No ranking points to plot in this range.'}
@@ -673,10 +706,10 @@ function RankingsChart({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       {rangeControls}
-      <div style={{ height: '400px' }}>
-        <Line data={chartData} options={options} />
+      <div className="relative min-h-0 flex-1" ref={chartWrapRef}>
+        <Line ref={chartRef} data={chartData} options={options} />
       </div>
     </div>
   );

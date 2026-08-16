@@ -1,4 +1,4 @@
-<svg width="600" height="220" viewBox="0 0 600 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="600" height="220" viewBox="0 0 600 220" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <path
     d="M60 180
        Q100 140 180 160
@@ -14,17 +14,16 @@
        Q490 215 465 200
        Q440 185 450 150
        Q460 120 500 120"
-    stroke="black" stroke-width="3" fill="none"
-    style="stroke-linecap:round;stroke-linejoin:round"
+    stroke="currentColor" stroke-width="3" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"
   />
-  <!-- Tennis ball (single line loop) -->
   <path
     d="M540 70
        Q550 60 560 70
        Q570 80 560 90
        Q550 100 540 90
        Q530 80 540 70"
-    stroke="black" stroke-width="3" fill="none"
-    style="stroke-linecap:round;stroke-linejoin:round"
+    stroke="currentColor" stroke-width="3" fill="none"
+    stroke-linecap="round" stroke-linejoin="round"
   />
 </svg>

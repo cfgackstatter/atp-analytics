@@ -1,2 +1,87 @@
-/* frontend/src/index.css */
+/* Design tokens + base styles for TennisRank */
 @import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+
+  --color-court: #1a5c45;
+  --color-court-ink: #0f3d2e;
+  --color-court-soft: #e7f1ec;
+  --color-page: #f3f6f4;
+  --color-page-deep: #e8eeea;
+  --color-surface: #ffffff;
+  --color-ink: #14231c;
+  --color-muted: #5a6d64;
+  --color-line: #d2ddd7;
+  --color-danger: #9a031e;
+  --color-warn-bg: #f8f1e3;
+  --color-warn-ink: #6b4e16;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    background-color: var(--color-page);
+    background-image:
+      radial-gradient(ellipse 90% 55% at 100% -10%, rgba(26, 92, 69, 0.09), transparent 55%),
+      radial-gradient(ellipse 70% 40% at 0% 100%, rgba(20, 35, 28, 0.04), transparent 50%),
+      linear-gradient(180deg, var(--color-page) 0%, var(--color-page-deep) 100%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .chip-enter {
+    animation: chip-in 180ms ease-out;
+  }
+
+  @keyframes chip-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .suggest-enter {
+    animation: suggest-in 140ms ease-out;
+  }
+
+  @keyframes suggest-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
