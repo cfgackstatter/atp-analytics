@@ -1,10 +1,19 @@
 // frontend/src/App.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import RankingsChart from './components/RankingsChart';
 import PlayerSearch from './components/PlayerSearch';
-import type { Player, RankingType, XAxisMode } from './types';
+import PlayerChip from './components/PlayerChip';
+import type {
+  DateRange,
+  MetricMode,
+  Player,
+  RankingType,
+  TournamentTitleType,
+  XAxisMode,
+} from './types';
 import { hasBirthdate } from './utils/playerAge';
+import { buildShareSearch, parseShareUrl, replaceShareUrl } from './utils/shareUrl';
 
 interface RankingData {
   rank: number;
@@ -73,13 +82,28 @@ function segmentBtn(active: boolean, disabled = false) {
     .join(' ');
 }
 
+const initialShare = parseShareUrl(
+  typeof window !== 'undefined' ? window.location.search : ''
+);
+
 function App() {
-  const [rankingType, setRankingType] = useState<RankingType>('singles');
-  const [xAxisMode, setXAxisMode] = useState<XAxisMode>('date');
+  const [rankingType, setRankingType] = useState<RankingType>(
+    initialShare.rankingType
+  );
+  const [xAxisMode, setXAxisMode] = useState<XAxisMode>(initialShare.xAxisMode);
+  const [metric, setMetric] = useState<MetricMode>(initialShare.metric);
+  const [dateRange, setDateRange] = useState<DateRange>(initialShare.dateRange);
+  const [rangePinned, setRangePinned] = useState(initialShare.rangeFromUrl);
+  const [titleTypes, setTitleTypes] = useState<TournamentTitleType[]>(
+    initialShare.titleTypes
+  );
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
   const [rankingsData, setRankingsData] = useState<RankingData[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(initialShare.playerIds.length > 0);
+  const urlReady = useRef(initialShare.playerIds.length === 0);
+  const selectionKeyRef = useRef<string | null>(null);
 
   const playerColors = useMemo(
     () =>
@@ -99,6 +123,74 @@ function App() {
   const canUseAgeAxis = playersWithBirthdate.length > 0;
   const effectiveXAxisMode: XAxisMode =
     xAxisMode === 'age' && canUseAgeAxis ? 'age' : 'date';
+
+  // Hydrate players from shareable URL
+  useEffect(() => {
+    if (initialShare.playerIds.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await axios.get('/players', {
+          params: { ids: initialShare.playerIds.join(',') },
+        });
+        if (cancelled) return;
+        const rows = Array.isArray(response.data) ? response.data : [];
+        setSelectedPlayers(rows);
+      } catch (error) {
+        console.error('Error hydrating players from URL:', error);
+      } finally {
+        if (!cancelled) {
+          setHydrating(false);
+          urlReady.current = true;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // After the first hydrated selection, unpin the range when players/type change
+  // so empty windows can auto-widen again (URL-shared range stays pinned).
+  useEffect(() => {
+    if (hydrating) return;
+    const key = `${rankingType}|${selectedPlayers
+      .map(p => p.player_id)
+      .sort()
+      .join(',')}`;
+    if (selectionKeyRef.current === null) {
+      selectionKeyRef.current = key;
+      return;
+    }
+    if (selectionKeyRef.current !== key) {
+      selectionKeyRef.current = key;
+      setRangePinned(false);
+    }
+  }, [selectedPlayers, rankingType, hydrating]);
+
+  // Sync shareable URL
+  useEffect(() => {
+    if (!urlReady.current || hydrating) return;
+    const search = buildShareSearch({
+      playerIds: selectedPlayers.map(p => p.player_id),
+      rankingType,
+      xAxisMode: effectiveXAxisMode,
+      metric,
+      dateRange,
+      titleTypes,
+    });
+    replaceShareUrl(search);
+  }, [
+    selectedPlayers,
+    rankingType,
+    effectiveXAxisMode,
+    metric,
+    dateRange,
+    titleTypes,
+    hydrating,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +250,7 @@ function App() {
   const chartRankings = selectedPlayers.length > 0 ? rankingsData : [];
   const hasPlayers = selectedPlayers.length > 0;
   const showChart = chartRankings.length > 0;
-  const noDataForPlayers = !loading && hasPlayers && !showChart;
+  const noDataForPlayers = !loading && !hydrating && hasPlayers && !showChart;
 
   const handleAddPlayer = (player: Player) => {
     if (!selectedPlayers.find(p => p.player_id === player.player_id)) {
@@ -174,6 +266,18 @@ function App() {
     setSelectedPlayers([]);
     setRankingsData([]);
   };
+
+  const handleDateRangeChange = useCallback((range: DateRange) => {
+    setDateRange(range);
+  }, []);
+
+  const handleRangePinnedChange = useCallback((pinned: boolean) => {
+    setRangePinned(pinned);
+  }, []);
+
+  const handleTitleTypesChange = useCallback((types: TournamentTitleType[]) => {
+    setTitleTypes(types);
+  }, []);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden text-ink">
@@ -218,6 +322,27 @@ function App() {
             <div
               className="inline-flex overflow-hidden rounded-md border border-line"
               role="group"
+              aria-label="Chart metric"
+            >
+              <button
+                type="button"
+                onClick={() => setMetric('rank')}
+                className={segmentBtn(metric === 'rank')}
+              >
+                Rank
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetric('points')}
+                className={`${segmentBtn(metric === 'points')} border-l border-line`}
+              >
+                Points
+              </button>
+            </div>
+
+            <div
+              className="inline-flex overflow-hidden rounded-md border border-line"
+              role="group"
               aria-label="Chart x-axis"
             >
               <button
@@ -248,29 +373,13 @@ function App() {
           <div className="mt-2.5 flex items-center gap-2">
             <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {selectedPlayers.map(player => (
-                <div
+                <PlayerChip
                   key={player.player_id}
-                  className="chip-enter flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium"
-                  style={{
-                    backgroundColor: `${playerColors[player.player_id]}18`,
-                    color: playerColors[player.player_id],
-                    borderColor: playerColors[player.player_id],
-                  }}
-                >
-                  <span>{player.player_name}</span>
-                  {effectiveXAxisMode === 'age' &&
-                    !hasBirthdate(player.birthdate) && (
-                      <span className="text-xs opacity-70">no DOB</span>
-                    )}
-                  <button
-                    type="button"
-                    onClick={() => handleRemovePlayer(player.player_id)}
-                    className="ml-0.5 text-base leading-none opacity-70 hover:opacity-100"
-                    aria-label={`Remove ${player.player_name}`}
-                  >
-                    ×
-                  </button>
-                </div>
+                  player={player}
+                  color={playerColors[player.player_id]}
+                  showNoDob={effectiveXAxisMode === 'age'}
+                  onRemove={() => handleRemovePlayer(player.player_id)}
+                />
               ))}
             </div>
             <button
@@ -294,24 +403,27 @@ function App() {
 
       <main className="relative flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-5 sm:py-4">
         <div className="relative flex min-h-0 flex-1 flex-col rounded-md border border-line bg-surface">
-          {loading && (
+          {(loading || hydrating) && (
             <div
               className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-surface/75 backdrop-blur-[1px]"
               role="status"
               aria-live="polite"
             >
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-court/25 border-t-court" />
-              <p className="text-sm text-muted">Loading rankings…</p>
+              <p className="text-sm text-muted">
+                {hydrating ? 'Loading shared chart…' : 'Loading rankings…'}
+              </p>
             </div>
           )}
 
-          {!hasPlayers && !loading && (
+          {!hasPlayers && !loading && !hydrating && (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
               <p className="font-display text-lg text-court-ink">
                 Compare ATP careers
               </p>
               <p className="max-w-sm text-sm text-muted">
-                Search for a player to start the chart.
+                Search for a player to start the chart. Links stay in sync with
+                your selection.
               </p>
             </div>
           )}
@@ -333,6 +445,13 @@ function App() {
                 tournaments={tournaments}
                 rankingType={rankingType}
                 xAxisMode={effectiveXAxisMode}
+                metric={metric}
+                dateRange={dateRange}
+                onDateRangeChange={handleDateRangeChange}
+                rangePinned={rangePinned}
+                onRangePinnedChange={handleRangePinnedChange}
+                titleTypes={titleTypes}
+                onTitleTypesChange={handleTitleTypesChange}
               />
             </div>
           )}

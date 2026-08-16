@@ -150,6 +150,7 @@ def get_tournaments(
 @app.get("/players")
 def get_players(
     country: Optional[str] = None,
+    ids: Optional[str] = None,
     limit: int = Query(default=100, le=500),
     has_bio: Optional[bool] = None,
 ):
@@ -158,6 +159,14 @@ def get_players(
         players_df = load_players(schema=PLAYERS_SCHEMA)
         if len(players_df) == 0:
             return []
+
+        if ids:
+            id_list = [pid.strip() for pid in ids.split(",") if pid.strip()]
+            if id_list:
+                players_df = players_df.filter(pl.col("player_id").is_in(id_list))
+                by_id = {row["player_id"]: row for row in players_df.to_dicts()}
+                # Preserve request order for shareable URLs
+                return [by_id[pid] for pid in id_list if pid in by_id]
 
         if country:
             mask = players_df["country"].str.to_lowercase().str.contains(country.lower())

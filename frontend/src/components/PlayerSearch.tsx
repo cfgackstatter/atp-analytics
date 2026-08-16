@@ -69,11 +69,7 @@ function PlayerSearch({ onSelectPlayer, autoFocus = false }: Props) {
   }, []);
 
   const selectPlayer = (player: Player) => {
-    onSelectPlayer({
-      player_id: player.player_id,
-      player_name: player.player_name,
-      birthdate: player.birthdate ?? null,
-    });
+    onSelectPlayer(player);
     setSearchTerm('');
     setSuggestions([]);
     setOpen(false);
