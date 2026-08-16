@@ -20,16 +20,29 @@ A full-stack web application for tracking and visualizing ATP tennis rankings ov
 
 ### Local Development
 
+Preferred path (no Docker): rebuild the frontend into `backend/static/` and run the API with uvicorn.
+
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-playwright install chromium
+# One-time setup
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
+# Install browsers into ~/.cache/ms-playwright (unset sandbox overrides)
+env -u PLAYWRIGHT_BROWSERS_PATH ./venv/bin/playwright install chromium
+# Create .admin-password.txt with a strong secret
 
-# Test locally with Docker
+# Day-to-day: API + built UI on :8000 (USE_S3=true for scrapes)
+make dev
+
+# Open http://localhost:8000
+# Admin: http://localhost:8000/admin/dashboard  (password from .admin-password.txt)
+```
+
+For UI iteration with hot reload, use `make dev-hot` (Vite on :3000, API on :8000).
+
+Docker alternative (builds the full image, local `./data`):
+
+```bash
 make test
-
-# Access at http://localhost:8000
-# Admin password from .admin-password.txt
 ```
 
 ### Deployment
@@ -48,13 +61,17 @@ make ssh
 ### Available Commands
 
 ```bash
-make help      # Show all commands
-make build     # Build Docker image
-make test      # Run locally
-make deploy    # Deploy to AWS EB
-make logs      # Stream production logs
-make ssh       # SSH into EB instance
-make clean     # Clean Docker images
+make help               # Show all commands
+make dev                # Rebuild frontend + run API on :8000
+make dev-hot            # API :8000 + Vite HMR on :3000
+make playwright-install # Install Chromium for local scrapes
+make pytest             # Run unit tests
+make build              # Build Docker image
+make test               # Run locally in Docker
+make deploy             # Deploy to AWS EB
+make logs               # Stream production logs
+make ssh                # SSH into EB instance
+make clean              # Clean Docker images
 ```
 
 ## Project Structure
@@ -112,16 +129,25 @@ Player scraping uses Playwright (headless browser) and is managed **manually** t
 ## Development Workflow
 
 1. Make changes locally
-2. Test with `make test`
-3. Deploy with `make deploy` (auto-commits, pushes, deploys)
-4. Monitor with `make logs`
+2. Run with `make dev` (or `make test` for a Docker smoke check)
+3. Update data via `/admin/dashboard` while `make dev` is running
+4. Deploy with `make deploy` (auto-commits, pushes, deploys)
+5. Monitor with `make logs`
 
 ## Troubleshooting
 
+### Local scrape fails with “Executable doesn't exist” / Playwright browser missing:
+
+- Reinstall Chromium into the default cache (not a Cursor sandbox path):
+  `make playwright-install`
+  or `env -u PLAYWRIGHT_BROWSERS_PATH ./venv/bin/playwright install chromium`
+- If `PLAYWRIGHT_BROWSERS_PATH` points at `/tmp/cursor-sandbox-cache/...`, unset it before scrapes/`make dev`
+- After bumping the `playwright` package version, run `make playwright-install` again
+
 ### Player scraping returns 0 players:
 
-- Check logs: `make logs`
-- Verify Playwright browsers installed in container
+- Check logs: `make logs` (prod) or the `make dev` terminal (local)
+- Verify Playwright browsers installed (`make playwright-install` locally; preinstalled in the Docker image)
 - Check production environment has sufficient memory
 
 ### Password not working:

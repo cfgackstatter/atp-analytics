@@ -6,9 +6,13 @@
 - `make help` - Show all available commands
 
 ### Local Development
-- `make test` - Build and run locally with test data
+- `make dev` - Rebuild frontend into `backend/static/`, run API on :8000 (preferred for scrapes + full app)
+- `make dev-hot` - API on :8000 + Vite HMR on :3000 (best for React work; open :3000)
+- `make playwright-install` - Install Chromium into `~/.cache/ms-playwright` (needed for admin scrapes under `make dev`)
+- `make pytest` - Run unit tests
+- `make test` - Build and run locally in Docker with `./data`
 - `make build` - Build Docker image only (no cache)
-- Open http://localhost:8000
+- Open http://localhost:8000 (or :3000 for `dev-hot`)
 - Password stored in `.admin-password.txt`
 
 ### Deployment
@@ -27,9 +31,14 @@
 
 ### Typical Development Cycle
 ```bash
+# 0. One-time: venv + deps + browsers
+python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
+make playwright-install
+
 # 1. Make code changes
-# 2. Test locally
-make test
+# 2. Run locally (rebuilds UI into backend/static)
+make dev
+# Admin scrapes: http://localhost:8000/admin/dashboard
 
 # 3. Deploy (auto-commits, pushes, and deploys)
 make deploy
@@ -94,7 +103,13 @@ make status
 
 ## Troubleshooting
 
-### Test fails locally:
+### Playwright “Executable doesn't exist” on local rankings/player scrapes:
+
+- `make dev` uses the venv Playwright package; browsers must match that version under `~/.cache/ms-playwright`
+- Run `make playwright-install` (unsets `PLAYWRIGHT_BROWSERS_PATH` so Cursor sandbox caches are not used)
+- After upgrading `playwright` in `requirements.txt`, reinstall browsers
+
+### Test / Docker fails locally:
 
 - Ensure `data/` directory exists with local data
 - Check `.admin-password.txt` exists

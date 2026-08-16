@@ -1,4 +1,4 @@
-.PHONY: help build frontend-build check-venv dev dev-hot pytest test deploy sync-env logs ssh clean status check-password
+.PHONY: help build frontend-build check-venv playwright-install dev dev-hot pytest test deploy sync-env logs ssh clean status check-password
 
 # Variables
 IMAGE_NAME := atp-analytics
@@ -40,6 +40,7 @@ help:
 	@echo "  make dev         - Rebuild frontend into static, run API on :8000 (latest UI+API)"
 	@echo "  make dev-hot     - API :8000 + Vite :3000 with hot reload (best for UI work)"
 	@echo "  make frontend-build - Rebuild React into backend/static only"
+	@echo "  make playwright-install - Install Chromium for local scrapes (~/.cache/ms-playwright)"
 	@echo "  make build       - frontend-build + Docker image (no cache)"
 	@echo "  make pytest      - Run unit tests"
 	@echo "  make test        - Run app locally in Docker with local data"
@@ -66,11 +67,24 @@ sync-env: check-password
 		AWS_REGION=us-east-1
 	@echo "EB environment variables updated."
 
+# Browsers must live under ~/.cache/ms-playwright. Cursor may set
+# PLAYWRIGHT_BROWSERS_PATH to a sandbox cache that scrapes won't see.
+playwright-install: check-venv
+	@echo "Installing Playwright Chromium into default cache..."
+	env -u PLAYWRIGHT_BROWSERS_PATH $(VENV_PYTHON) -m playwright install chromium
+	@echo "Done. Re-run scrapes via /admin/dashboard under make dev."
+
 dev: check-password check-venv frontend-build
+	@if [ -n "$$PLAYWRIGHT_BROWSERS_PATH" ]; then \
+		echo "Warning: PLAYWRIGHT_BROWSERS_PATH=$$PLAYWRIGHT_BROWSERS_PATH"; \
+		echo "  Scrapes expect browsers in ~/.cache/ms-playwright."; \
+		echo "  Fix: unset PLAYWRIGHT_BROWSERS_PATH && make playwright-install"; \
+	fi
 	@echo "Starting local API + built frontend (http://localhost:8000)..."
 	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
 	@echo "API docs: http://localhost:8000/docs"
 	@echo "Tip: use 'make dev-hot' for instant frontend reload while editing React."
+	env -u PLAYWRIGHT_BROWSERS_PATH \
 	ADMIN_PASSWORD=$(PASSWORD) \
 	USE_S3=true \
 	ENABLE_DOCS=true \
@@ -83,10 +97,15 @@ dev-hot: check-password check-venv
 		echo "Installing frontend deps..."; \
 		cd frontend && npm install; \
 	fi
+	@if [ -n "$$PLAYWRIGHT_BROWSERS_PATH" ]; then \
+		echo "Warning: PLAYWRIGHT_BROWSERS_PATH=$$PLAYWRIGHT_BROWSERS_PATH"; \
+		echo "  Fix: unset PLAYWRIGHT_BROWSERS_PATH && make playwright-install"; \
+	fi
 	@echo "Starting API (http://localhost:8000) + Vite (http://localhost:3000)..."
 	@echo "Open http://localhost:3000 for the app (hot reload)."
 	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
 	@trap 'kill 0' EXIT INT TERM; \
+	env -u PLAYWRIGHT_BROWSERS_PATH \
 	ADMIN_PASSWORD=$(PASSWORD) \
 	USE_S3=true \
 	ENABLE_DOCS=true \
