@@ -1,15 +1,26 @@
-.PHONY: help build frontend-build check-venv playwright-install dev dev-hot pytest test deploy sync-env logs ssh clean status check-password
+.PHONY: help build frontend-build check-venv check-eb playwright-install dev dev-hot pytest test deploy sync-env logs ssh clean status check-password
 
 # Variables
 IMAGE_NAME := atp-analytics
 PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null)
 VENV_PYTHON := ./venv/bin/python
 VENV_UVICORN := ./venv/bin/uvicorn
+# Make uses a minimal PATH; prefer known install locations for the EB CLI.
+EB := $(firstword $(wildcard ./venv/bin/eb $(HOME)/.local/bin/eb) $(shell command -v eb 2>/dev/null))
 
 check-password:
 	@if [ -z "$(PASSWORD)" ]; then \
 		echo "Error: .admin-password.txt is missing or empty."; \
 		echo "Create it with a strong secret, then: make sync-env"; \
+		exit 1; \
+	fi
+
+check-eb:
+	@if [ -z "$(EB)" ] || [ ! -x "$(EB)" ]; then \
+		echo "Error: Elastic Beanstalk CLI (eb) not found."; \
+		echo "Install into the project venv:"; \
+		echo "  ./venv/bin/pip install awsebcli"; \
+		echo "Or user-local: pipx install awsebcli"; \
 		exit 1; \
 	fi
 
@@ -56,10 +67,10 @@ help:
 	@echo "Manual updates only: use /admin/dashboard (no scheduled tasks)."
 	@echo ""
 
-sync-env: check-password
+sync-env: check-password check-eb
 	@echo "Syncing production env from .admin-password.txt ..."
 	@echo "  ADMIN_PASSWORD=<from file>  FORCE_HTTPS=true  ENABLE_DOCS=false"
-	eb setenv \
+	@$(EB) setenv \
 		ADMIN_PASSWORD="$(PASSWORD)" \
 		FORCE_HTTPS=true \
 		ENABLE_DOCS=false \
@@ -142,25 +153,25 @@ deploy: sync-env
 		git push || echo "Already up to date"; \
 	fi
 	# Rolling updates (e.g. root volume resize) often exceed the 10m default.
-	eb deploy --timeout 45
+	$(EB) deploy --timeout 45
 	@echo "Deployment complete! Run 'make logs' to view logs."
 
-logs:
+logs: check-eb
 	@echo "Streaming EB logs (Ctrl+C to exit)..."
-	eb logs --stream
+	$(EB) logs --stream
 
-ssh:
+ssh: check-eb
 	@echo "Connecting to EB instance..."
-	eb ssh
+	$(EB) ssh
 
 clean:
 	@echo "Cleaning up Docker images..."
 	docker rmi $(IMAGE_NAME) || true
 	docker system prune -f
 
-status:
+status: check-eb
 	@echo "EB Environment Status:"
-	eb status
+	$(EB) status
 	@echo ""
 	@echo "Environment Variables:"
-	eb printenv
+	$(EB) printenv
