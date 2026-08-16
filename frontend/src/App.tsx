@@ -170,6 +170,11 @@ function App() {
     setSelectedPlayers(selectedPlayers.filter(p => p.player_id !== playerId));
   };
 
+  const handleClearPlayers = () => {
+    setSelectedPlayers([]);
+    setRankingsData([]);
+  };
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden text-ink">
       <header className="flex shrink-0 items-center gap-3 border-b border-line/80 bg-surface/90 px-4 py-2.5 backdrop-blur-sm sm:px-5">
@@ -268,6 +273,13 @@ function App() {
                 </div>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={handleClearPlayers}
+              className="shrink-0 rounded-md border border-line bg-surface px-2.5 py-1 text-sm font-medium text-muted transition-colors hover:bg-court-soft hover:text-ink"
+            >
+              Clear all
+            </button>
           </div>
         )}
 

@@ -19,6 +19,11 @@ import 'chartjs-adapter-date-fns';
 import { format } from 'date-fns';
 import type { Player, RankingType, XAxisMode } from '../types';
 import { ageAtDate, formatAge, hasBirthdate, parsePlayerDate } from '../utils/playerAge';
+import {
+  buildChartExportFilename,
+  downloadChartPng,
+} from '../utils/exportChartPng';
+import { chartWatermarkPlugin } from '../utils/chartWatermark';
 
 const DATE_RANGES = ['YTD', '1Y', '3Y', '5Y', 'All'] as const;
 type DateRange = (typeof DATE_RANGES)[number];
@@ -52,7 +57,8 @@ ChartJS.register(
   Tooltip,
   Legend,
   TimeScale,
-  ScatterController
+  ScatterController,
+  chartWatermarkPlugin
 );
 
 interface RankingData {
@@ -188,6 +194,7 @@ function RankingsChart({
   const byAge = xAxisMode === 'age';
   const chartRef = useRef<ChartJS<'line', ChartPoint[]>>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   const safeTournaments: Tournament[] = Array.isArray(tournaments) ? tournaments : [];
   const birthdateByPlayer = Object.fromEntries(
@@ -658,44 +665,129 @@ function RankingsChart({
     },
   };
 
-  const rangeControls = byAge ? (
-    <p className="shrink-0 text-right text-xs text-muted sm:text-sm">
-      Full careers overlaid by age (date ranges apply in Date view).
-    </p>
-  ) : (
-    <div className="flex shrink-0 justify-end overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div
-        className="inline-flex overflow-hidden rounded-md border border-line"
-        role="group"
-        aria-label="Date range"
+  const handleDownloadPng = () => {
+    const chart = chartRef.current;
+    const canvas = chart?.canvas;
+    if (!canvas || lineDatasets.length === 0) return;
+
+    const legend = lineDatasets.map(ds => ({
+      name: ds.label,
+      color: String(ds.borderColor),
+    }));
+
+    const subtitleParts = [
+      rankingType === 'singles' ? 'Singles' : 'Doubles',
+      byAge ? 'Age' : 'Date',
+      byAge ? 'full careers' : activeRange,
+    ];
+
+    const filename = buildChartExportFilename([
+      rankingType,
+      byAge ? 'age' : activeRange,
+      ...legend.map(item => item.name),
+    ]);
+
+    setExporting(true);
+    try {
+      // Ensure latest frame is painted before reading pixels.
+      chart.update('none');
+      downloadChartPng({
+        chartCanvas: canvas,
+        legend,
+        subtitle: subtitleParts.join(' · '),
+        filename,
+      });
+    } catch (err) {
+      console.error('Chart PNG export failed', err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const rangeControls = (
+    <div className="flex shrink-0 items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={handleDownloadPng}
+        disabled={exporting || lineDatasets.length === 0}
+        className="shrink-0 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-court-soft disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
       >
-        {DATE_RANGES.map((range, index) => (
-          <button
-            key={range}
-            type="button"
-            onClick={() => {
-              setRangePinned(true);
-              setActiveRange(range);
-            }}
-            className={`shrink-0 px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
-              index > 0 ? 'border-l border-line' : ''
-            } ${
-              activeRange === range
-                ? 'bg-court text-white'
-                : 'bg-surface text-muted hover:bg-court-soft hover:text-ink'
-            }`}
+        {exporting ? 'Exporting…' : 'Download PNG'}
+      </button>
+      {byAge ? (
+        <p className="min-w-0 text-right text-xs text-muted sm:text-sm">
+          Full careers overlaid by age (date ranges apply in Date view).
+        </p>
+      ) : (
+        <div className="min-w-0 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            className="ml-auto inline-flex overflow-hidden rounded-md border border-line"
+            role="group"
+            aria-label="Date range"
           >
-            {range}
-          </button>
-        ))}
-      </div>
+            {DATE_RANGES.map((range, index) => (
+              <button
+                key={range}
+                type="button"
+                onClick={() => {
+                  setRangePinned(true);
+                  setActiveRange(range);
+                }}
+                className={`shrink-0 px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
+                  index > 0 ? 'border-l border-line' : ''
+                } ${
+                  activeRange === range
+                    ? 'bg-court text-white'
+                    : 'bg-surface text-muted hover:bg-court-soft hover:text-ink'
+                }`}
+              >
+                {range}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 
   if (lineDatasets.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        {rangeControls}
+        <div className="flex shrink-0 justify-end">
+          {byAge ? (
+            <p className="text-xs text-muted sm:text-sm">
+              Full careers overlaid by age (date ranges apply in Date view).
+            </p>
+          ) : (
+            <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div
+                className="inline-flex overflow-hidden rounded-md border border-line"
+                role="group"
+                aria-label="Date range"
+              >
+                {DATE_RANGES.map((range, index) => (
+                  <button
+                    key={range}
+                    type="button"
+                    onClick={() => {
+                      setRangePinned(true);
+                      setActiveRange(range);
+                    }}
+                    className={`shrink-0 px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
+                      index > 0 ? 'border-l border-line' : ''
+                    } ${
+                      activeRange === range
+                        ? 'bg-court text-white'
+                        : 'bg-surface text-muted hover:bg-court-soft hover:text-ink'
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="flex flex-1 items-center justify-center text-center text-sm text-muted">
           {byAge
             ? 'No ranking points to plot by age for the selected players.'
