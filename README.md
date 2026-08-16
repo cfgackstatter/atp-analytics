@@ -1,19 +1,26 @@
-# ATP Analytics
+# TennisRank.net (ATP Analytics)
 
-A full-stack web application for tracking and visualizing ATP tennis rankings over time.
+Full-stack app for comparing ATP ranking careers over time — singles and doubles, with tournament titles on the chart.
+
+**Live UI:** viewport chart shell, shareable links, rank or points, date or age axis.
 
 ## Features
 
-- 📊 Interactive ranking charts for singles and doubles
-- 🔍 Player search with autocomplete
-- 📈 Multi-player comparison with persistent color coding
-- 🎾 Historical ranking data from ATP Tour
-- 🏆 Tournament wins displayed on rankings chart
+- Interactive singles / doubles charts (Chart.js)
+- Player search with autocomplete; multi-player compare with stable colors
+- **Shareable URLs** — players, type, axis, metric, date range, and title filters stay in the query string
+- **Rank or Points** mode
+- **Date or Age** x-axis (age needs birthdates from scraped bios)
+- Tournament title markers (sized circles) with **GS / ATP / Challenger / ITF** filters
+- Hover bios on player chips (country, DOB, height, hand, etc.)
+- PNG export with baked-in legend and light `tennisrank.net` watermark
+- Clear all, date-range controls, and auto-widen when a short window has no data
+- Historical rankings, tournaments, and bios from ATP Tour (S3 in production)
 
 ## Tech Stack
 
 **Backend:** FastAPI, Polars, Playwright  
-**Frontend:** React, TypeScript, Chart.js, TailwindCSS  
+**Frontend:** React, TypeScript, Chart.js, Tailwind CSS  
 **Deployment:** AWS Elastic Beanstalk, Docker, S3
 
 ## Quick Start
@@ -45,16 +52,30 @@ Docker alternative (builds the full image, local `./data`):
 make test
 ```
 
+### Shareable chart URLs
+
+Example:
+
+```text
+/?players=s980,f324&type=singles&metric=points&axis=age&range=All&titles=gs,atp
+```
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `players` | comma-separated ATP player ids | (none) |
+| `type` | `singles` \| `doubles` | `singles` |
+| `metric` | `rank` \| `points` | `rank` |
+| `axis` | `date` \| `age` | `date` |
+| `range` | `YTD` \| `1Y` \| `3Y` \| `5Y` \| `All` | `1Y` |
+| `titles` | `gs,atp,ch,fu` or `none` | all types |
+
 ### Deployment
 
+Install the EB CLI **outside** the project venv (see [README.dev.md](README.dev.md)), then:
+
 ```bash
-# Deploy to production
-make deploy
-
-# View production logs
+make deploy   # sync-env, then commit/push if needed, eb deploy
 make logs
-
-# SSH into production
 make ssh
 ```
 
@@ -69,8 +90,10 @@ make pytest             # Run unit tests
 make build              # Build Docker image
 make test               # Run locally in Docker
 make deploy             # Deploy to AWS EB
+make sync-env           # Push admin password + prod env vars only
 make logs               # Stream production logs
 make ssh                # SSH into EB instance
+make status             # EB status + env vars
 make clean              # Clean Docker images
 ```
 
@@ -80,92 +103,99 @@ make clean              # Clean Docker images
 atp-analytics/
 ├── backend/
 │   ├── api/
-│   │   ├── main.py          # FastAPI endpoints
-│   │   └── admin.py         # Admin endpoints
-│   ├── scraper/             # Data scrapers
-│   └── storage/             # S3/local storage
-├── frontend/                # React app
-├── Dockerfile               # Production container
-├── Dockerrun.aws.json       # EB Docker config
-├── Makefile                 # Development commands
+│   │   ├── main.py          # FastAPI endpoints + static UI
+│   │   └── admin.py         # Admin scrape / summary APIs
+│   ├── scraper/             # ATP scrapers (Playwright)
+│   ├── storage/             # S3 / local Parquet
+│   ├── templates/           # Admin dashboard HTML
+│   └── static/              # Built React assets (gitignore hashed bundles)
+├── frontend/                # React app (Vite)
+├── Dockerfile
+├── Dockerrun.aws.json
+├── Makefile
 ├── .admin-password.txt      # Admin password (not in git)
-└── data/                    # Local data (not in git)
+└── data/                    # Local Parquet (not in git)
 ```
 
 ## Data Scraping
 
-Player scraping uses Playwright (headless browser) and is managed **manually** through the admin interface at `/admin/dashboard`. There is no scheduled/weekly update endpoint. Scrapes run in a dedicated subprocess so the site stays up; concurrent scrapes are rejected (409) and data merges are locked/deduped.
+Scrapes are **manual** via `/admin/dashboard` (no scheduled weekly job). Jobs run in a subprocess so the site stays up; concurrent scrapes return 409. Merges are locked and rankings deduped.
 
-### Admin Features:
+### Admin
 
-- Scrape ATP rankings (singles/doubles)
-- Scrape tournament results
-- Scrape player records used for search (names / ids; bios are not shown in the UI)
-- View scraping job history
+- Scrape rankings (singles / doubles), tournaments, and player bios
+- Data summary: weeks covered, bio coverage, tournament counts, system / Playwright info
+- Job history and scrape controls
 
 ## Configuration
 
-### Local Environment
+### Local
 
-- **Required** password in `.admin-password.txt` (gitignored) — no default
-- Makefile refuses to start `dev`/`test` if the file is missing
-- Admin APIs use `Authorization: Bearer <password>` (never query-string)
-- Data stored in `./data/` directory
+- **Required** `.admin-password.txt` (gitignored) — no default
+- `make dev` / `make test` refuse to start if missing
+- Admin APIs: `Authorization: Bearer <password>`
+- Data in `./data/` (or S3 when `USE_S3=true`)
 
-### Production Environment
+### Production
 
-- `make deploy` syncs env vars then deploys code (see `make sync-env`)
-- Env sync sets `ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, `ENABLE_DOCS=false`, and S3 settings
-- OpenAPI `/docs` is off in production; CORS is same-origin only unless `CORS_ORIGINS` is set
-- Data stored in S3
+- `make deploy` runs `sync-env` then deploys code
+- Sync sets `ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, `ENABLE_DOCS=false`, S3 settings
+- OpenAPI `/docs` off in prod; CORS same-origin unless `CORS_ORIGINS` is set
+- Data in S3
 
 ## Deployment Architecture
 
-- Docker: Single container with Playwright pre-installed
-- Elastic Beanstalk: Handles container orchestration
-- S3: Data storage (Parquet files)
-- GitHub: Source control and deployment trigger
+- Docker image with Playwright preinstalled
+- Elastic Beanstalk for the container
+- S3 for Parquet (rankings, tournaments, players)
+- GitHub for source; deploy with `make deploy`
 
 ## Development Workflow
 
-1. Make changes locally
-2. Run with `make dev` (or `make test` for a Docker smoke check)
-3. Update data via `/admin/dashboard` while `make dev` is running
-4. Deploy with `make deploy` (auto-commits, pushes, deploys)
-5. Monitor with `make logs`
+1. Change code locally
+2. `make dev` (or `make test` for a Docker smoke check)
+3. Refresh data via `/admin/dashboard` while the API is running
+4. `make deploy` (prompts to commit if dirty, then push + EB deploy)
+5. `make logs` to monitor
+
+More detail: [README.dev.md](README.dev.md).
 
 ## Troubleshooting
 
-### Local scrape fails with “Executable doesn't exist” / Playwright browser missing:
+### Playwright “Executable doesn't exist” locally
 
-- Reinstall Chromium into the default cache (not a Cursor sandbox path):
-  `make playwright-install`
+- `make playwright-install`
   or `env -u PLAYWRIGHT_BROWSERS_PATH ./venv/bin/playwright install chromium`
-- If `PLAYWRIGHT_BROWSERS_PATH` points at `/tmp/cursor-sandbox-cache/...`, unset it before scrapes/`make dev`
-- After bumping the `playwright` package version, run `make playwright-install` again
+- Unset `PLAYWRIGHT_BROWSERS_PATH` if it points at a Cursor sandbox cache
+- After bumping the `playwright` package, reinstall browsers
 
-### Player scraping returns 0 players:
+### Player scraping returns 0 players
 
-- Check logs: `make logs` (prod) or the `make dev` terminal (local)
-- Verify Playwright browsers installed (`make playwright-install` locally; preinstalled in the Docker image)
-- Check production environment has sufficient memory
+- Check `make logs` (prod) or the `make dev` terminal
+- Confirm Chromium via `make playwright-install` (preinstalled in Docker)
+- Check EB instance memory on small hosts
 
-### Password not working:
+### Password not working
 
-- Local: Check `.admin-password.txt` exists and is non-empty (`make check-password`)
-- Production: Verify `ADMIN_PASSWORD` is set with `eb printenv` / `make status`
-- If unset, admin APIs return 503 (fail closed — no fallback password)
+- Local: `.admin-password.txt` non-empty (`make check-password`)
+- Production: `make status` / `eb printenv` for `ADMIN_PASSWORD`
+- Unset → admin APIs return 503 (fail closed)
 
-### Docker build fails:
+### `eb` outdated / not found on deploy
 
-- Clear cache: `make clean && make build`
-- Check Dockerfile syntax
-- Verify base image is accessible
+- Install outside the venv: `python3 -m pip install --user -U awsebcli` (or `pipx install awsebcli`)
+- `make deploy` uses `~/.local/bin/eb`, not `./venv/bin/eb`
+
+### Docker build fails
+
+- `make clean && make build`
 
 ## Files Not in Git
 
-- `.admin-password.txt` - Production password
-- `data/` - Local Parquet files
+- `.admin-password.txt`
+- `data/`
+- `backend/static/assets/` (hashed JS/CSS from the frontend build)
+- `venv/`
 
 ## License
 

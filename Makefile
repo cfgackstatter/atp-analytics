@@ -5,8 +5,8 @@ IMAGE_NAME := atp-analytics
 PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null)
 VENV_PYTHON := ./venv/bin/python
 VENV_UVICORN := ./venv/bin/uvicorn
-# Make uses a minimal PATH; prefer known install locations for the EB CLI.
-EB := $(firstword $(wildcard ./venv/bin/eb $(HOME)/.local/bin/eb) $(shell command -v eb 2>/dev/null))
+# EB CLI is a host tool (not an app dependency). Prefer user/pipx install over the venv.
+EB := $(firstword $(wildcard $(HOME)/.local/bin/eb) $(shell command -v eb 2>/dev/null))
 
 check-password:
 	@if [ -z "$(PASSWORD)" ]; then \
@@ -18,9 +18,9 @@ check-password:
 check-eb:
 	@if [ -z "$(EB)" ] || [ ! -x "$(EB)" ]; then \
 		echo "Error: Elastic Beanstalk CLI (eb) not found."; \
-		echo "Install into the project venv:"; \
-		echo "  ./venv/bin/pip install awsebcli"; \
-		echo "Or user-local: pipx install awsebcli"; \
+		echo "Install outside the project venv (recommended):"; \
+		echo "  pipx install awsebcli"; \
+		echo "  # or: python3 -m pip install --user -U awsebcli"; \
 		exit 1; \
 	fi
 

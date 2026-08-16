@@ -1,81 +1,74 @@
-# ATP Analytics Development
+# TennisRank.net — Development
+
+Companion to the root [README.md](README.md). Day-to-day commands, scrape/auth details, and EB CLI setup.
 
 ## Quick Commands
 
 ### Help
-- `make help` - Show all available commands
+- `make help` — all targets
 
 ### Local Development
-- `make dev` - Rebuild frontend into `backend/static/`, run API on :8000 (preferred for scrapes + full app)
-- `make dev-hot` - API on :8000 + Vite HMR on :3000 (best for React work; open :3000)
-- `make playwright-install` - Install Chromium into `~/.cache/ms-playwright` (needed for admin scrapes under `make dev`)
-- `make pytest` - Run unit tests
-- `make test` - Build and run locally in Docker with `./data`
-- `make build` - Build Docker image only (no cache)
-- Open http://localhost:8000 (or :3000 for `dev-hot`)
-- Password stored in `.admin-password.txt`
+- `make dev` — rebuild frontend → `backend/static/`, API on :8000 (preferred for scrapes + full app)
+- `make dev-hot` — API :8000 + Vite HMR :3000 (React iteration; open :3000)
+- `make playwright-install` — Chromium → `~/.cache/ms-playwright` (needed for admin scrapes under `make dev`)
+- `make pytest` — unit tests
+- `make test` — Docker build + run with `./data`
+- `make build` — Docker image only (no cache)
+- App: http://localhost:8000 — Admin: http://localhost:8000/admin/dashboard
+- Password: `.admin-password.txt`
 
 ### Deployment
-- `make deploy` - Auto-commit, push, and deploy to production
-- `make logs` - Stream production logs in real-time
-- `make ssh` - SSH into production instance
-
-### Monitoring
-- `make status` - Show EB environment status and environment variables
-- `make logs` - Stream logs (Ctrl+C to exit)
+- `make sync-env` — push admin password + prod env vars only
+- `make deploy` — `sync-env`, then commit/push if dirty, `eb deploy`
+- `make logs` / `make ssh` / `make status`
 
 ### Cleanup
-- `make clean` - Remove local Docker images and prune system
+- `make clean` — remove local Docker images and prune
 
 ## Workflow
 
-### Typical Development Cycle
 ```bash
-# 0. One-time: venv + deps + browsers
+# One-time
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
 make playwright-install
+# also install awsebcli outside the venv (see below)
 
-# 1. Make code changes
-# 2. Run locally (rebuilds UI into backend/static)
 make dev
 # Admin scrapes: http://localhost:8000/admin/dashboard
 
-# 3. Deploy (auto-commits, pushes, and deploys)
 make deploy
-
-# 4. Monitor deployment
 make logs
 ```
 
 ### Smart Deploy Behavior
 
-- If you have uncommitted changes: prompts for commit message
-- If working tree is clean: pushes and deploys existing commits
-- Never fails on "nothing to commit"
+- Dirty tree: prompts for commit message, then push + deploy
+- Clean tree: push (if needed) + deploy existing commits
+- Does not fail on “nothing to commit”
 
-## Files Not in Git
+## Chart / frontend notes
 
-- `.admin-password.txt` - Production password (keep safe!)
-- `data/` - Local Parquet files
-- `.env` - Not needed with Makefile
+- Shareable query params: `players`, `type`, `metric`, `axis`, `range`, `titles` (see root README)
+- `GET /players?ids=a,b` hydrates shared links (order preserved)
+- Rankings for selected players return full history (no row cap when `player_ids` is set)
+- Title markers: hollow circles, size by type (ITF → Challenger → ATP → GS)
+- Player bios: chip hover tooltips (not chart tooltips)
+- PNG export: legend + subtitle + watermark on canvas; no site header in the file
 
-## Admin password
+## Admin password & scrapes
 
 - Local source of truth: `.admin-password.txt` (required, no default)
-- `make dev` / `make test` fail if the file is missing
+- `make dev` / `make test` fail if missing
 - Data updates are **manual only** via `/admin/dashboard` (no weekly/EventBridge task)
 - Auth: `Authorization: Bearer <password>` on `/admin/*` API routes (dashboard HTML is public)
-- Rate limit: 60 requests / minute / IP on admin APIs
-- Scrapes run in a **subprocess** (web process stays responsive); only one scrape at a time (HTTP 409 if busy)
-- Parquet/S3 merges use a file write lock + rankings dedupe on `(player_id, date)`
-- One Playwright browser per job with `SCRAPE_CONCURRENCY` parallel pages (default 2); shared retries/backoff; heavier resource blocking
+- Rate limit: 60 requests / minute / IP on admin APIs — avoid re-triggering poll on every password keystroke
+- Scrapes run in a **subprocess** (web process stays responsive); only one at a time (HTTP 409 if busy)
+- Parquet/S3 merges: file write lock + rankings dedupe on `(player_id, date)`
+- One Playwright browser per job; `SCRAPE_CONCURRENCY` parallel pages (default 2)
 - Ranking-date cache (12h), checkpoint every 5 weeks, skip complete past tournament years
-- On tiny EB hosts set `SCRAPE_CONCURRENCY=1` (and optionally `PLAYWRIGHT_SINGLE_PROCESS=true`)
-- Scrapers soft-fail after retries; player bio attempts recorded (`scrape_attempted_at`) with cooldown
-- Prefer ATP `player_slug` from ranking hrefs (Unicode-folded name slug as fallback)
-- Unit tests: `make pytest` (or `pytest`)
-- CORS off by default (same-origin app); set `CORS_ORIGINS=https://a.com,https://b.com` only if needed
-- `/docs` enabled locally (`ENABLE_DOCS=true`); disabled in prod via `make sync-env`
+- Tiny EB hosts: `SCRAPE_CONCURRENCY=1` (optionally `PLAYWRIGHT_SINGLE_PROCESS=true`)
+- Bio attempts recorded (`scrape_attempted_at`) with cooldown; prefer ATP `player_slug` from ranking hrefs
+- CORS off by default; `/docs` on locally (`ENABLE_DOCS=true`), off in prod via `make sync-env`
 
 Example:
 ```bash
@@ -85,48 +78,64 @@ curl -H "Authorization: Bearer $(cat .admin-password.txt)" \
 
 ## Production Environment Variables
 
-Two different things:
-
 | Command | What it does |
 |---------|----------------|
-| `make sync-env` | Pushes env vars only (`ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, S3 settings). No new code. |
-| `make deploy` | Runs `sync-env`, then commits/pushes (if needed) and `eb deploy` (new code). |
+| `make sync-env` | Env vars only (`ADMIN_PASSWORD` from `.admin-password.txt`, `FORCE_HTTPS=true`, S3, `ENABLE_DOCS=false`). No new code. |
+| `make deploy` | `sync-env`, then commit/push if needed and `eb deploy`. |
 
-Usual path after local changes: just `make deploy`.
+Password-only change: edit `.admin-password.txt`, then `make sync-env`.
 
-Password-only change (no code): edit `.admin-password.txt`, then `make sync-env`.
+### Elastic Beanstalk CLI
 
-Verify with:
+Install **outside** the project venv (host tool — avoids dep conflicts and stale venv copies):
+
 ```bash
+# preferred
+pipx install awsebcli
+pipx upgrade awsebcli
+
+# or user site-packages
+python3 -m pip install --user -U awsebcli
+```
+
+`make deploy` / `sync-env` / `logs` / `ssh` / `status` resolve `eb` from `~/.local/bin` (or `PATH`), **not** `./venv/bin/eb`.
+
+```bash
+eb --version          # should match what make uses
 make status
 ```
 
+## Files Not in Git
+
+- `.admin-password.txt`
+- `data/`
+- `backend/static/assets/` (hashed frontend build)
+- `venv/`
+- `.env` — not required with the Makefile
+
 ## Troubleshooting
 
-### Playwright “Executable doesn't exist” on local rankings/player scrapes:
+### Playwright “Executable doesn't exist”
 
-- `make dev` uses the venv Playwright package; browsers must match that version under `~/.cache/ms-playwright`
-- Run `make playwright-install` (unsets `PLAYWRIGHT_BROWSERS_PATH` so Cursor sandbox caches are not used)
+- `make playwright-install` (unsets sandbox `PLAYWRIGHT_BROWSERS_PATH`)
 - After upgrading `playwright` in `requirements.txt`, reinstall browsers
 
-### Test / Docker fails locally:
+### Test / Docker fails locally
 
-- Ensure `data/` directory exists with local data
-- Check `.admin-password.txt` exists
-- Verify Docker is running
+- `data/` present; `.admin-password.txt` non-empty; Docker running
 
-### Deploy fails:
+### Deploy fails / “awsebcli is out of date”
 
-- Check `eb status` shows healthy environment
-- Run `make logs` to see errors
-- Verify git push succeeded
+- Upgrade the **user** install (`pip install --user -U awsebcli` or `pipx upgrade`), not the venv
+- Confirm `which eb` → `~/.local/bin/eb`
+- `make logs`; `eb status`
 
-### Password issues:
+### Password issues
 
-- Local: `make check-password` / ensure `.admin-password.txt` is non-empty
-- Production: Run `make status` to verify `ADMIN_PASSWORD` is set
-- Unset password → admin APIs return 503 (no `changeme123` fallback)
+- Local: `make check-password`
+- Production: `make status` for `ADMIN_PASSWORD`
+- Unset → admin APIs return 503 (no fallback password)
 
 ## Reference
 
-All commands defined in `Makefile` - run `make help` for quick reference.
+All commands: `Makefile` / `make help`.
