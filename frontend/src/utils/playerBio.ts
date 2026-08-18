@@ -2,7 +2,10 @@ import type { Player } from '../types';
 import { parsePlayerDate } from './playerAge';
 import { format } from 'date-fns';
 
-/** Multi-line bio details for chip hover tooltips. */
+/**
+ * Multi-line bio details for chip hover tooltips.
+ * Not shown in the UI currently (kept for a possible later restore).
+ */
 export function playerBioLines(player: Player): string[] {
   const lines: string[] = [];
 

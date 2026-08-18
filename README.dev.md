@@ -52,7 +52,6 @@ make logs
 - `GET /players?ids=a,b` hydrates shared links (order preserved)
 - Rankings for selected players return full history (no row cap when `player_ids` is set)
 - Title markers: hollow circles, size by type (ITF → Challenger → ATP → GS)
-- Player bios: chip hover tooltips (not chart tooltips)
 - PNG export: legend + subtitle + watermark on canvas; no site header in the file
 
 ## Admin password & scrapes
