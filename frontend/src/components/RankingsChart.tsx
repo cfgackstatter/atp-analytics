@@ -36,6 +36,7 @@ import { formatPoints } from '../utils/playerBio';
 import {
   buildChartExportFilename,
   downloadChartPng,
+  type ExportableChart,
 } from '../utils/exportChartPng';
 import { chartWatermarkPlugin } from '../utils/chartWatermark';
 
@@ -228,6 +229,8 @@ function RankingsChart({
   const chartRef = useRef<ChartJS<'line', ChartPoint[]>>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  /** Remount after PNG export so capture-only chart styles don’t stick in the UI. */
+  const [chartKey, setChartKey] = useState(0);
 
   const enabledTitles = useMemo(() => new Set(titleTypes), [titleTypes]);
 
@@ -752,8 +755,8 @@ function RankingsChart({
 
   const handleDownloadPng = () => {
     const chart = chartRef.current;
-    const canvas = chart?.canvas;
-    if (!canvas || lineDatasets.length === 0) return;
+    const wrap = chartWrapRef.current;
+    if (!chart?.canvas || !wrap || lineDatasets.length === 0) return;
 
     const legend = lineDatasets.map(ds => ({
       name: ds.label,
@@ -784,9 +787,9 @@ function RankingsChart({
 
     setExporting(true);
     try {
-      chart.update('none');
       downloadChartPng({
-        chartCanvas: canvas,
+        chart: chart as unknown as ExportableChart,
+        chartWrap: wrap,
         legend,
         subtitle: subtitleParts.join(' · '),
         filename,
@@ -795,6 +798,8 @@ function RankingsChart({
       console.error('Chart PNG export failed', err);
     } finally {
       setExporting(false);
+      // Export mutates the live Chart.js instance; remount restores UI styling.
+      setChartKey(k => k + 1);
     }
   };
 
@@ -862,6 +867,7 @@ function RankingsChart({
           type="button"
           onClick={handleDownloadPng}
           disabled={exporting || lineDatasets.length === 0}
+          title="Download a 16:9 PNG sized for social posts"
           className="shrink-0 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-court-soft disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
         >
           {exporting ? 'Exporting…' : 'Download PNG'}
@@ -908,7 +914,7 @@ function RankingsChart({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {rangeControls}
       <div className="relative min-h-0 flex-1" ref={chartWrapRef}>
-        <Line ref={chartRef} data={chartData} options={options} />
+        <Line key={chartKey} ref={chartRef} data={chartData} options={options} />
       </div>
     </div>
   );

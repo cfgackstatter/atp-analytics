@@ -12,7 +12,7 @@ Full-stack app for comparing ATP ranking careers over time — singles and doubl
 - **Rank or Points** mode
 - **Date or Age** x-axis (age needs birthdates from scraped bios)
 - Tournament title markers (sized circles) with **GS / ATP / Challenger / ITF** filters
-- PNG export with baked-in legend and light `tennisrank.net` watermark
+- PNG export (16:9 social size) with legend, brand line, and light `tennisrank.net` watermark
 - Clear all, date-range controls, and auto-widen when a short window has no data
 - Historical rankings, tournaments, and bios from ATP Tour (S3 in production)
 
