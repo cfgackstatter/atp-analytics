@@ -5,6 +5,9 @@ IMAGE_NAME := atp-analytics
 PASSWORD := $(shell cat ./.admin-password.txt 2>/dev/null)
 VENV_PYTHON := ./venv/bin/python
 VENV_UVICORN := ./venv/bin/uvicorn
+FIND_PORT := ./scripts/find-free-port.sh
+DEV_API_PORT ?= 8000
+DEV_VITE_PORT ?= 3000
 # EB CLI is a host tool (not an app dependency). Prefer user/pipx install over the venv.
 EB := $(firstword $(wildcard $(HOME)/.local/bin/eb) $(shell command -v eb 2>/dev/null))
 
@@ -48,8 +51,8 @@ frontend-build:
 help:
 	@echo "ATP Analytics Development Commands"
 	@echo ""
-	@echo "  make dev         - Rebuild frontend into static, run API on :8000 (latest UI+API)"
-	@echo "  make dev-hot     - API :8000 + Vite :3000 with hot reload (best for UI work)"
+	@echo "  make dev         - Rebuild frontend into static, run API (default :8000, next free if busy)"
+	@echo "  make dev-hot     - API + Vite HMR (defaults :8000 / :3000, next free if busy)"
 	@echo "  make frontend-build - Rebuild React into backend/static only"
 	@echo "  make playwright-install - Install Chromium for local scrapes (~/.cache/ms-playwright)"
 	@echo "  make build       - frontend-build + Docker image (no cache)"
@@ -91,18 +94,22 @@ dev: check-password check-venv frontend-build
 		echo "  Scrapes expect browsers in ~/.cache/ms-playwright."; \
 		echo "  Fix: unset PLAYWRIGHT_BROWSERS_PATH && make playwright-install"; \
 	fi
-	@echo "Starting local API + built frontend (http://localhost:8000)..."
-	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
-	@echo "API docs: http://localhost:8000/docs"
-	@echo "Tip: use 'make dev-hot' for instant frontend reload while editing React."
+	@API_PORT="$$($(FIND_PORT) $(DEV_API_PORT))"; \
+	if [ "$$API_PORT" != "$(DEV_API_PORT)" ]; then \
+		echo "Port $(DEV_API_PORT) is busy — using $$API_PORT instead."; \
+	fi; \
+	echo "Starting local API + built frontend (http://localhost:$$API_PORT)..."; \
+	echo "Admin dashboard: http://localhost:$$API_PORT/admin/dashboard"; \
+	echo "API docs: http://localhost:$$API_PORT/docs"; \
+	echo "Tip: use 'make dev-hot' for instant frontend reload while editing React."; \
 	env -u PLAYWRIGHT_BROWSERS_PATH \
-	ADMIN_PASSWORD=$(PASSWORD) \
+	ADMIN_PASSWORD="$(PASSWORD)" \
 	USE_S3=true \
 	ENABLE_DOCS=true \
 	FORCE_HTTPS=false \
-	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port 8000
+	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port "$$API_PORT"
 
-# Best for frontend iteration: Vite HMR proxies /players,/rankings,/admin,/tournaments → :8000
+# Best for frontend iteration: Vite HMR proxies API routes to the chosen API port
 dev-hot: check-password check-venv
 	@if [ ! -d frontend/node_modules ]; then \
 		echo "Installing frontend deps..."; \
@@ -112,17 +119,27 @@ dev-hot: check-password check-venv
 		echo "Warning: PLAYWRIGHT_BROWSERS_PATH=$$PLAYWRIGHT_BROWSERS_PATH"; \
 		echo "  Fix: unset PLAYWRIGHT_BROWSERS_PATH && make playwright-install"; \
 	fi
-	@echo "Starting API (http://localhost:8000) + Vite (http://localhost:3000)..."
-	@echo "Open http://localhost:3000 for the app (hot reload)."
-	@echo "Admin dashboard: http://localhost:8000/admin/dashboard"
-	@trap 'kill 0' EXIT INT TERM; \
+	@API_PORT="$$($(FIND_PORT) $(DEV_API_PORT))"; \
+	VITE_PORT="$$($(FIND_PORT) $(DEV_VITE_PORT))"; \
+	if [ "$$API_PORT" != "$(DEV_API_PORT)" ]; then \
+		echo "API port $(DEV_API_PORT) is busy — using $$API_PORT instead."; \
+	fi; \
+	if [ "$$VITE_PORT" != "$(DEV_VITE_PORT)" ]; then \
+		echo "Vite port $(DEV_VITE_PORT) is busy — using $$VITE_PORT instead."; \
+	fi; \
+	echo "Starting API (http://localhost:$$API_PORT) + Vite (http://localhost:$$VITE_PORT)..."; \
+	echo "Open http://localhost:$$VITE_PORT for the app (hot reload)."; \
+	echo "Admin dashboard: http://localhost:$$API_PORT/admin/dashboard"; \
+	trap 'kill 0' EXIT INT TERM; \
 	env -u PLAYWRIGHT_BROWSERS_PATH \
-	ADMIN_PASSWORD=$(PASSWORD) \
+	ADMIN_PASSWORD="$(PASSWORD)" \
 	USE_S3=true \
 	ENABLE_DOCS=true \
 	FORCE_HTTPS=false \
-	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port 8000 & \
-	cd frontend && npm run dev & \
+	$(VENV_UVICORN) backend.api.main:app --reload --host 0.0.0.0 --port "$$API_PORT" & \
+	cd frontend && \
+	DEV_API_PORT="$$API_PORT" DEV_VITE_PORT="$$VITE_PORT" \
+	npm run dev -- --port "$$VITE_PORT" --strictPort & \
 	wait
 
 build: frontend-build

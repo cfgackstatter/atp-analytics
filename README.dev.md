@@ -8,8 +8,8 @@ Companion to the root [README.md](README.md). Day-to-day commands, scrape/auth d
 - `make help` — all targets
 
 ### Local Development
-- `make dev` — rebuild frontend → `backend/static/`, API on :8000 (preferred for scrapes + full app)
-- `make dev-hot` — API :8000 + Vite HMR :3000 (React iteration; open :3000)
+- `make dev` — rebuild frontend → `backend/static/`, API on :8000 (or next free port if busy)
+- `make dev-hot` — API + Vite HMR (defaults :8000 / :3000; bumps to the next free port if busy; Vite proxies to the chosen API port)
 - `make playwright-install` — Chromium → `~/.cache/ms-playwright` (needed for admin scrapes under `make dev`)
 - `make pytest` — unit tests
 - `make test` — Docker build + run with `./data`
